@@ -1,12 +1,17 @@
 import type { Message } from "ai";
-import { streamText, createDataStreamResponse } from "ai";
+import {
+  streamText,
+  createDataStreamResponse,
+  appendResponseMessages,
+} from "ai";
 import { model } from "~/lib/model";
 import { auth } from "~/server/auth";
 import { z } from "zod";
 import { searchSerper } from "~/serper";
 import { db } from "~/server/db";
-import { userRequests, users } from "~/server/db/schema";
+import { userRequests, users, chats } from "~/server/db/schema";
 import { and, eq, gte, count } from "drizzle-orm";
+import { upsertChat, getChat } from "~/server/db/chat";
 
 export const maxDuration = 60;
 
@@ -18,8 +23,11 @@ export async function POST(request: Request) {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  const body = (await request.json()) as { messages: Array<Message> };
-  const { messages } = body;
+  const body = (await request.json()) as {
+    messages: Array<Message>;
+    chatId?: string;
+  };
+  const { messages, chatId: incomingChatId } = body;
 
   // Load user (get admin flag)
   const [userRow] = await db
@@ -54,6 +62,66 @@ export async function POST(request: Request) {
 
   // Record request for analytics (even admin users)
   await db.insert(userRequests).values({ userId: session.user.id });
+
+  // Chat persistence setup
+  let chatId = incomingChatId ?? crypto.randomUUID();
+  let chatTitle: string | null = null;
+
+  if (incomingChatId) {
+    // Verify chat exists and belongs to user
+    const existingMeta = await db
+      .select({ id: chats.id, userId: chats.userId, title: chats.title })
+      .from(chats)
+      .where(eq(chats.id, incomingChatId))
+      .limit(1);
+
+    const existingRow = existingMeta[0];
+    if (!existingRow) {
+      return new Response("Chat not found", { status: 404 });
+    }
+    if (existingRow.userId !== session.user.id) {
+      return new Response("Forbidden", { status: 403 });
+    }
+
+    chatTitle = existingRow.title ?? null;
+  } else {
+    // New chat: derive a title from the first user message (if any)
+    const firstUserMessage =
+      [...messages].reverse().find((m) => m.role === "user") ?? messages[0];
+    let rawTitle: string = "New Chat";
+    if (firstUserMessage) {
+      const c: any = (firstUserMessage as any).content;
+      if (typeof c === "string") rawTitle = c;
+      else if (Array.isArray(c)) {
+        rawTitle =
+          c
+            .map((p: any) => {
+              if (typeof p === "string") return p;
+              if (p && typeof p === "object") {
+                if (typeof p.text === "string") return p.text;
+                if (typeof p.content === "string") return p.content;
+              }
+              return "";
+            })
+            .join(" ")
+            .trim() || rawTitle;
+      }
+    }
+    chatTitle = (rawTitle || "New Chat").slice(0, 80);
+
+    // Create the chat immediately with only the current (user) messages to guard against stream failures
+    try {
+      await upsertChat({
+        userId: session.user.id,
+        chatId,
+        title: chatTitle ?? "New Chat",
+        messages, // only user / existing messages for now
+      });
+    } catch (e) {
+      console.error("Failed to pre-create chat", e);
+      return new Response("Failed to create chat", { status: 500 });
+    }
+  }
 
   return createDataStreamResponse({
     execute: async (dataStream) => {
@@ -91,7 +159,27 @@ If you lack sufficient information after one search, perform a refined follow-up
           },
         },
         maxSteps: 10,
+        onFinish: async ({ response }) => {
+          try {
+            const responseMessages = response.messages;
+            const updatedMessages = appendResponseMessages({
+              messages,
+              responseMessages,
+            });
+            await upsertChat({
+              userId: session.user.id,
+              chatId,
+              title: chatTitle || "Chat",
+              messages: updatedMessages,
+            });
+          } catch (e) {
+            console.error("Failed to persist completed chat", e);
+          }
+        },
       });
+
+      // Expose chat id early so client can reference it (optional consumer handling)
+      dataStream.writeData({ type: "chat-id", id: chatId });
 
       result.mergeIntoDataStream(dataStream);
     },
