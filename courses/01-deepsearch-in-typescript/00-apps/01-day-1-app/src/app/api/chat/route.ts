@@ -1,10 +1,16 @@
 import type { Message } from "ai";
 import { streamText, createDataStreamResponse } from "ai";
 import { model } from "~/lib/model";
+import { auth } from "~/server/auth";
 
 export const maxDuration = 60;
 
 export async function POST(request: Request) {
+  const session = await auth();
+  if (!session) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
   const body = (await request.json()) as {
     messages: Array<Message>;
   };

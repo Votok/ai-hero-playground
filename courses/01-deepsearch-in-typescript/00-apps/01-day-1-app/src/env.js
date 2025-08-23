@@ -14,6 +14,8 @@ export const env = createEnv({
         : z.string().optional(),
     DATABASE_URL: z.string().url(),
     GOOGLE_GENERATIVE_AI_API_KEY: z.string(),
+    AUTH_DISCORD_ID: z.string(),
+    AUTH_DISCORD_SECRET: z.string(),
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
@@ -35,6 +37,8 @@ export const env = createEnv({
     AUTH_SECRET: process.env.AUTH_SECRET,
     DATABASE_URL: process.env.DATABASE_URL,
     GOOGLE_GENERATIVE_AI_API_KEY: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+    AUTH_DISCORD_ID: process.env.AUTH_DISCORD_ID,
+    AUTH_DISCORD_SECRET: process.env.AUTH_DISCORD_SECRET,
     NODE_ENV: process.env.NODE_ENV,
   },
   /**
