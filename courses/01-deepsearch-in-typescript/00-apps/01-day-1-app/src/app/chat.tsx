@@ -17,7 +17,7 @@ export const ChatPage = ({ userName, isAuthenticated }: ChatProps) => {
     useChat();
   const [showSignInModal, setShowSignInModal] = useState(false);
 
-  // Log our messages
+  // Log our messages (hover message.parts for structure)
   console.log(messages);
 
   const onSubmit = (e: FormEvent<HTMLFormElement>) => {
@@ -41,7 +41,7 @@ export const ChatPage = ({ userName, isAuthenticated }: ChatProps) => {
             return (
               <ChatMessage
                 key={index}
-                text={message.content}
+                parts={message.parts}
                 role={message.role}
                 userName={userName}
               />

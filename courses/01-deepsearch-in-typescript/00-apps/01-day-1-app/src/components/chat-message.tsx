@@ -1,7 +1,11 @@
 import ReactMarkdown, { type Components } from "react-markdown";
+import type { Message } from "ai";
+
+// Hover over MessagePart to see all possible part variants provided by the AI SDK.
+export type MessagePart = NonNullable<Message["parts"]>[number];
 
 interface ChatMessageProps {
-  text: string;
+  parts?: MessagePart[]; // Message parts (text, tool invocations, etc.)
   role: string;
   userName: string;
 }
@@ -38,7 +42,66 @@ const Markdown = ({ children }: { children: string }) => {
   return <ReactMarkdown components={components}>{children}</ReactMarkdown>;
 };
 
-export const ChatMessage = ({ text, role, userName }: ChatMessageProps) => {
+function ToolInvocationView({
+  part,
+}: {
+  part: Extract<MessagePart, { type: "tool-invocation" }>;
+}) {
+  const inv = part.toolInvocation;
+  const { toolName, args, state } = inv as any;
+  const isResult = inv.state === "result";
+
+  return (
+    <div className="bg-gray-750/50 my-3 rounded border border-gray-600 bg-gray-800 px-3 py-2 text-xs">
+      <div className="mb-1 flex items-center gap-2 font-mono text-[11px] uppercase tracking-wide text-blue-300">
+        <span>Tool</span>
+        <span className="rounded bg-blue-500/10 px-1.5 py-0.5 font-semibold text-blue-200">
+          {toolName}
+        </span>
+        <span className="text-[10px] lowercase italic text-gray-400">
+          {state}
+        </span>
+      </div>
+      <div className="mb-2">
+        <div className="mb-1 font-semibold text-gray-300">Args</div>
+        <pre className="max-h-56 overflow-auto rounded bg-gray-900 p-2 text-[11px] leading-snug text-gray-200">
+          {JSON.stringify(args, null, 2)}
+        </pre>
+      </div>
+      {isResult && "result" in inv && (
+        <div className="mb-1">
+          <div className="mb-1 font-semibold text-gray-300">Result</div>
+          <pre className="max-h-56 overflow-auto rounded bg-gray-900 p-2 text-[11px] leading-snug text-green-200">
+            {JSON.stringify((inv as any).result, null, 2)}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function renderPart(part: MessagePart, idx: number) {
+  switch (part.type) {
+    case "text":
+      return (
+        <div key={idx} className="prose prose-invert max-w-none">
+          <Markdown>{part.text}</Markdown>
+        </div>
+      );
+    case "tool-invocation":
+      return <ToolInvocationView key={idx} part={part} />;
+    // Intentionally ignoring other part types for now (reasoning, source, file, step-start, etc.)
+    default:
+      // return (
+      //   <div key={idx} className="my-2 rounded bg-gray-800 p-2 text-xs italic text-gray-400">
+      //     Unsupported part type: {part.type}
+      //   </div>
+      // );
+      return null;
+  }
+}
+
+export const ChatMessage = ({ parts, role, userName }: ChatMessageProps) => {
   const isAI = role === "assistant";
 
   return (
@@ -52,9 +115,11 @@ export const ChatMessage = ({ text, role, userName }: ChatMessageProps) => {
           {isAI ? "AI" : userName}
         </p>
 
-        <div className="prose prose-invert max-w-none">
-          <Markdown>{text}</Markdown>
-        </div>
+        {parts && parts.length > 0 ? (
+          parts.map((p, i) => renderPart(p, i))
+        ) : (
+          <div className="text-sm italic text-gray-500">No content</div>
+        )}
       </div>
     </div>
   );
