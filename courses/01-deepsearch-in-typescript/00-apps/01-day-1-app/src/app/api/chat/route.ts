@@ -66,6 +66,7 @@ export async function POST(request: Request) {
   // Chat persistence setup
   let chatId = incomingChatId ?? crypto.randomUUID();
   let chatTitle: string | null = null;
+  let newChatId: string | null = null; // track if a brand new chat was created
 
   if (incomingChatId) {
     // Verify chat exists and belongs to user
@@ -108,6 +109,9 @@ export async function POST(request: Request) {
       }
     }
     chatTitle = (rawTitle || "New Chat").slice(0, 80);
+
+    // Mark that we are creating a brand new chat now
+    newChatId = chatId;
 
     // Create the chat immediately with only the current (user) messages to guard against stream failures
     try {
@@ -178,9 +182,12 @@ If you lack sufficient information after one search, perform a refined follow-up
         },
       });
 
-      // Expose chat id early so client can reference it (optional consumer handling)
-      dataStream.writeData({ type: "chat-id", id: chatId });
+      if (newChatId) {
+        dataStream.writeData({ type: "NEW_CHAT_CREATED", chatId: newChatId });
+      }
 
+      // Remove early exposure of chat id; instead, only emit at end if it's a new chat.
+      // result.mergeIntoDataStream will pipe model tokens; afterwards we emit NEW_CHAT_CREATED if applicable.
       result.mergeIntoDataStream(dataStream);
     },
     onError: (e) => {
