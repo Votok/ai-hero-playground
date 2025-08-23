@@ -12,6 +12,7 @@ import { db } from "~/server/db";
 import { userRequests, users, chats } from "~/server/db/schema";
 import { and, eq, gte, count } from "drizzle-orm";
 import { upsertChat, getChat } from "~/server/db/chat";
+import { deriveChatTitle } from "~/lib/utils";
 
 export const maxDuration = 60;
 
@@ -87,28 +88,7 @@ export async function POST(request: Request) {
     chatTitle = existingRow.title ?? null;
   } else {
     // New chat: derive a title from the first user message (if any)
-    const firstUserMessage =
-      [...messages].reverse().find((m) => m.role === "user") ?? messages[0];
-    let rawTitle: string = "New Chat";
-    if (firstUserMessage) {
-      const c: any = (firstUserMessage as any).content;
-      if (typeof c === "string") rawTitle = c;
-      else if (Array.isArray(c)) {
-        rawTitle =
-          c
-            .map((p: any) => {
-              if (typeof p === "string") return p;
-              if (p && typeof p === "object") {
-                if (typeof p.text === "string") return p.text;
-                if (typeof p.content === "string") return p.content;
-              }
-              return "";
-            })
-            .join(" ")
-            .trim() || rawTitle;
-      }
-    }
-    chatTitle = (rawTitle || "New Chat").slice(0, 80);
+    chatTitle = deriveChatTitle(messages as any[]);
 
     // Mark that we are creating a brand new chat now
     newChatId = chatId;
