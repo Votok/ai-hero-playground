@@ -8,14 +8,21 @@ import { useState, useEffect } from "react";
 import type { FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { isNewChatCreated } from "~/lib/utils";
+import type { Message } from "ai";
 
 interface ChatProps {
   userName: string;
   isAuthenticated: boolean;
   chatId: string | undefined;
+  initialMessages?: Message[]; // Added to hydrate chat when opening existing chat
 }
 
-export const ChatPage = ({ userName, isAuthenticated, chatId }: ChatProps) => {
+export const ChatPage = ({
+  userName,
+  isAuthenticated,
+  chatId,
+  initialMessages,
+}: ChatProps) => {
   const router = useRouter();
   const {
     messages,
@@ -27,6 +34,8 @@ export const ChatPage = ({ userName, isAuthenticated, chatId }: ChatProps) => {
     data,
   } = useChat({
     body: { chatId },
+    // If we have pre-fetched messages from DB, provide them here
+    initialMessages,
   });
   const [showSignInModal, setShowSignInModal] = useState(false);
 

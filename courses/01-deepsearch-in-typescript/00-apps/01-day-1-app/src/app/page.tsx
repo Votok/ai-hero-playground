@@ -3,13 +3,8 @@ import Link from "next/link";
 import { auth } from "~/server/auth/index.ts";
 import { ChatPage } from "./chat.tsx";
 import { AuthButton } from "../components/auth-button.tsx";
-
-const chats = [
-  {
-    id: "1",
-    title: "My First Chat",
-  },
-];
+import { getChats, getChat } from "~/server/db/chat";
+import type { Message } from "ai";
 
 export default async function HomePage({
   searchParams,
@@ -18,8 +13,31 @@ export default async function HomePage({
 }) {
   const { id: chatId } = await searchParams;
   const session = await auth();
+  const userId = session?.user?.id;
   const userName = session?.user?.name ?? "Guest";
   const isAuthenticated = !!session?.user;
+
+  let chats: Array<{ id: string; title: string }> = [];
+  let initialMessages: Message[] | undefined = undefined;
+
+  if (userId) {
+    // Fetch user chats for sidebar
+    const dbChats = await getChats({ userId });
+    chats = dbChats.map((c) => ({ id: c.id, title: c.title }));
+
+    // If chatId present, fetch that chat + messages
+    if (chatId) {
+      const dbChat = await getChat({ userId, chatId });
+      if (dbChat?.messages) {
+        initialMessages = dbChat.messages.map((msg) => ({
+          id: msg.id,
+          role: msg.role as "user" | "assistant",
+          parts: msg.parts as Message["parts"],
+          content: "",
+        }));
+      }
+    }
+  }
 
   return (
     <div className="flex h-screen bg-gray-950">
@@ -75,6 +93,7 @@ export default async function HomePage({
         userName={userName}
         isAuthenticated={isAuthenticated}
         chatId={chatId}
+        initialMessages={initialMessages}
       />
     </div>
   );
