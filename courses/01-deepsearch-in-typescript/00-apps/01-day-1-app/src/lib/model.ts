@@ -1,0 +1,10 @@
+import { google } from "@ai-sdk/google";
+
+// Available Google Gemini models:
+// - "gemini-2.0-flash-001" (current - supports tool calling)
+// - "gemini-1.5-pro" 
+// - "gemini-1.5-flash"
+// - "gemini-1.0-pro"
+// Note: Use gemini-2.0-flash-001 or newer for tool calling support
+
+export const model = google("gemini-2.0-flash-001");
