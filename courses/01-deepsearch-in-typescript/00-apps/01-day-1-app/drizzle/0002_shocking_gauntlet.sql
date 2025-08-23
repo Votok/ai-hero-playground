@@ -1,0 +1,1 @@
+ALTER TABLE "ai-app-template_message" ALTER COLUMN "id" SET DATA TYPE varchar(255);

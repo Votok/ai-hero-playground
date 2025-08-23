@@ -8,6 +8,20 @@
       "when": 1739441164070,
       "tag": "0000_magical_the_leader",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1755962466371,
+      "tag": "0001_lumpy_emma_frost",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1755962567948,
+      "tag": "0002_shocking_gauntlet",
+      "breakpoints": true
     }
   ]
 }
