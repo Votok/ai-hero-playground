@@ -13,10 +13,11 @@ interface ChatProps {
 }
 
 export const ChatPage = ({ userName, isAuthenticated }: ChatProps) => {
-  const { messages, input, handleInputChange, handleSubmit, isLoading } =
+  const { messages, input, handleInputChange, handleSubmit, isLoading, error } =
     useChat();
   const [showSignInModal, setShowSignInModal] = useState(false);
 
+  //console.log(error);
   // Log our messages (hover message.parts for structure)
   console.log(messages);
 

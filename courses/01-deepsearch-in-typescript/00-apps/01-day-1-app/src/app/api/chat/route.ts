@@ -4,8 +4,13 @@ import { model } from "~/lib/model";
 import { auth } from "~/server/auth";
 import { z } from "zod";
 import { searchSerper } from "~/serper";
+import { db } from "~/server/db";
+import { userRequests, users } from "~/server/db/schema";
+import { and, eq, gte, count } from "drizzle-orm";
 
 export const maxDuration = 60;
+
+const DAILY_REQUEST_LIMIT = 1;
 
 export async function POST(request: Request) {
   const session = await auth();
@@ -13,14 +18,45 @@ export async function POST(request: Request) {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  const body = (await request.json()) as {
-    messages: Array<Message>;
-  };
+  const body = (await request.json()) as { messages: Array<Message> };
+  const { messages } = body;
+
+  // Load user (get admin flag)
+  const [userRow] = await db
+    .select({ id: users.id, isAdmin: users.isAdmin })
+    .from(users)
+    .where(eq(users.id, session.user.id))
+    .limit(1);
+  if (!userRow) {
+    return new Response("User not found", { status: 404 });
+  }
+
+  // Rate limit (skip if admin)
+  if (!userRow.isAdmin) {
+    const startOfToday = new Date();
+    startOfToday.setUTCHours(0, 0, 0, 0);
+
+    const todayCountResult = await db
+      .select({ value: count() })
+      .from(userRequests)
+      .where(
+        and(
+          eq(userRequests.userId, session.user.id),
+          gte(userRequests.createdAt, startOfToday),
+        ),
+      );
+    const todayCount = Number(todayCountResult[0]?.value ?? 0);
+
+    if (todayCount >= DAILY_REQUEST_LIMIT) {
+      return new Response("Daily request limit reached", { status: 429 });
+    }
+  }
+
+  // Record request for analytics (even admin users)
+  await db.insert(userRequests).values({ userId: session.user.id });
 
   return createDataStreamResponse({
     execute: async (dataStream) => {
-      const { messages } = body;
-
       const result = streamText({
         model,
         messages,
@@ -46,14 +82,11 @@ If you lack sufficient information after one search, perform a refined follow-up
                 { q: query, num: 10 },
                 abortSignal,
               );
-              return results.organic.map((result) => {
-                //console.log(result);
-                return {
-                  title: result.title,
-                  link: result.link,
-                  snippet: result.snippet,
-                };
-              });
+              return results.organic.map((result) => ({
+                title: result.title,
+                link: result.link,
+                snippet: result.snippet,
+              }));
             },
           },
         },
