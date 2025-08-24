@@ -13,6 +13,8 @@ import { userRequests, users, chats } from "~/server/db/schema";
 import { and, eq, gte, count } from "drizzle-orm";
 import { upsertChat, getChat } from "~/server/db/chat";
 import { deriveChatTitle } from "~/lib/utils";
+import { Langfuse } from "langfuse";
+import { env } from "~/env";
 
 export const maxDuration = 60;
 
@@ -107,6 +109,18 @@ export async function POST(request: Request) {
     }
   }
 
+  // Initialize Langfuse client per-request (stateless edge-friendly). Could be optimized to a shared instance if runtime allows.
+  const langfuse = new Langfuse({
+    environment: env.NODE_ENV,
+  });
+
+  // Create trace after final chatId resolved (post creation/validation logic above)
+  const trace = langfuse.trace({
+    sessionId: chatId, // reuse chat id as session grouping in Langfuse
+    name: "chat",
+    userId: session.user.id,
+  });
+
   return createDataStreamResponse({
     execute: async (dataStream) => {
       const result = streamText({
@@ -156,11 +170,23 @@ If you lack sufficient information after one search, perform a refined follow-up
               title: chatTitle || "Chat",
               messages: updatedMessages,
             });
+            // Flush telemetry so trace & spans are exported before request ends
+            try {
+              await langfuse.flushAsync();
+            } catch (e) {
+              console.error("Langfuse flush failed", e);
+            }
           } catch (e) {
             console.error("Failed to persist completed chat", e);
           }
         },
-        experimental_telemetry: { isEnabled: true },
+        experimental_telemetry: {
+          isEnabled: true,
+          functionId: "agent", // identifier for function/span in Langfuse dashboard
+          metadata: {
+            langfuseTraceId: trace.id,
+          },
+        },
       });
 
       if (newChatId) {
