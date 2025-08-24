@@ -160,6 +160,7 @@ If you lack sufficient information after one search, perform a refined follow-up
             console.error("Failed to persist completed chat", e);
           }
         },
+        experimental_telemetry: { isEnabled: true },
       });
 
       if (newChatId) {
