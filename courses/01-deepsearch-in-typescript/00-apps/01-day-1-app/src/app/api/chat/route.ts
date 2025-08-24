@@ -8,6 +8,7 @@ import { model } from "~/lib/model";
 import { auth } from "~/server/auth";
 import { z } from "zod";
 import { searchSerper } from "~/serper";
+import { bulkCrawlWebsites } from "~/server/crawler/crawl";
 import { db } from "~/server/db";
 import { userRequests, users, chats } from "~/server/db/schema";
 import { and, eq, gte, count } from "drizzle-orm";
@@ -126,18 +127,26 @@ export async function POST(request: Request) {
       const result = streamText({
         model,
         messages,
-        system: `You are a research assistant. ALWAYS attempt to use the searchWeb tool before answering a new user question to obtain current, reliable information.
+        system: `You are a research assistant. ALWAYS:
+1. Run searchWeb for every new user question (unless the user is explicitly asking about prior chat context only).
+2. Immediately AFTER searchWeb, you MUST call scrapePages on the top 1-3 most relevant result URLs BEFORE forming your answer. Do not skip scrapePages. If a crawl fails, still proceed with remaining pages and note the failure only if it materially limits the answer.
 
-Instructions:
-1. Tool Use: If you have not yet searched for the current question, call searchWeb first.
-2. Citations: Every factual statement must be followed by an inline markdown citation using the exact format [Title](URL). Never expose a raw bare URL (e.g. https://example.com) without markdown.
-3. Source Consolidation: If multiple sources confirm the same fact, cite only the strongest / most authoritative one.
-4. Snippets: Integrate and synthesize—do not just list snippets. Provide a clear, concise answer first, then elaborate.
-5. Sources Section: After the main answer, include a heading 'Sources' followed by a bullet list where every item is '- [Title](URL): brief relevance'. Only include sources you actually used.
-6. Formatting: Use markdown. No HTML. Do not hallucinate URLs or titles—use exactly those returned by searchWeb. If a title is too long, you may shorten it while keeping meaning.
-7. If the user asks casual or personal questions with no need for external info, you may answer directly, but this should be rare; still consider whether a quick search could add value.
+Detailed Policy:
+- Selection: Choose the most authoritative / content-rich pages (documentation, standards, primary sources). Limit to <=3 unless the question explicitly demands broader coverage (then <=5).
+- Mandatory scrapePages: Even if snippets look sufficient you still fetch full content to reduce hallucination risk.
+- Efficiency: Do not scrape obviously duplicate mirrors or low-value aggregator pages.
 
-If you lack sufficient information after one search, perform a refined follow-up search (new query) before answering.`,
+Answer Construction Rules:
+1. After scraping, synthesize using the FULL PAGE markdown not just snippets.
+2. Citations: Every factual statement must include an inline markdown citation [Title](URL). Never expose a bare URL.
+3. Consolidate sources: Prefer one strong source per fact cluster.
+4. Structure: Provide a concise direct answer first, then deeper sections (Comparison, Rationale, Steps, Risks, etc. as relevant).
+5. Sources Section: Add a 'Sources' heading with bullet list '- [Title](URL): brief relevance'. Only list used sources (including those scraped that contributed). Exclude failed crawls unless crucial (then mark '(crawl failed)').
+6. Formatting: Pure markdown. No HTML. Use fenced code blocks for code.
+7. If the user request is clearly conversational with no external info need (rare), you may skip tools; otherwise the above sequence is mandatory.
+8. If initial search results are insufficient, perform a refined follow-up searchWeb (different query) THEN scrapePages again before answering.
+
+Never fabricate citations or URLs.`,
         tools: {
           searchWeb: {
             parameters: z.object({
@@ -153,6 +162,21 @@ If you lack sufficient information after one search, perform a refined follow-up
                 link: result.link,
                 snippet: result.snippet,
               }));
+            },
+          },
+          scrapePages: {
+            parameters: z.object({
+              urls: z
+                .array(z.string().url())
+                .min(1)
+                .max(5)
+                .describe(
+                  "A small list (1-5) of high value page URLs to fetch full markdown content for",
+                ),
+            }),
+            execute: async ({ urls }) => {
+              const crawlResult = await bulkCrawlWebsites({ urls });
+              return crawlResult;
             },
           },
         },
