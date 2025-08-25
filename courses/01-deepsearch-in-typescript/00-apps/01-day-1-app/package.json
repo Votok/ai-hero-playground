@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=20 <21"
+  },
   "scripts": {
     "build": "next build",
     "check": "next lint && tsc --noEmit",
@@ -11,6 +14,7 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "dev": "next dev --turbo",
+    "evals": "evalite watch",
     "lint": "next lint",
     "lint:fix": "next lint --fix",
     "preview": "next build && next start",
