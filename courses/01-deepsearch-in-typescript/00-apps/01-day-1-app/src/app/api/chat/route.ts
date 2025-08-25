@@ -1,19 +1,12 @@
 import type { Message } from "ai";
-import {
-  streamText,
-  createDataStreamResponse,
-  appendResponseMessages,
-} from "ai";
-import { model } from "~/lib/model";
+import { createDataStreamResponse } from "ai";
 import { auth } from "~/server/auth";
-import { z } from "zod";
-import { searchSerper } from "~/serper";
-import { bulkCrawlWebsites } from "~/server/crawler/crawl";
 import { db } from "~/server/db";
 import { userRequests, users, chats } from "~/server/db/schema";
 import { and, eq, gte, count } from "drizzle-orm";
-import { upsertChat, getChat } from "~/server/db/chat";
+import { upsertChat } from "~/server/db/chat";
 import { deriveChatTitle } from "~/lib/utils";
+import { streamFromDeepSearch } from "~/lib/deep-search";
 import { Langfuse } from "langfuse";
 import { env } from "~/env";
 
@@ -110,107 +103,34 @@ export async function POST(request: Request) {
     }
   }
 
-  // Initialize Langfuse client per-request (stateless edge-friendly). Could be optimized to a shared instance if runtime allows.
+  // Initialize Langfuse client per-request (stateless edge-friendly)
   const langfuse = new Langfuse({
     environment: env.NODE_ENV,
   });
 
-  // Create trace after final chatId resolved (post creation/validation logic above)
+  // Create trace after final chatId resolved
   const trace = langfuse.trace({
-    sessionId: chatId, // reuse chat id as session grouping in Langfuse
+    sessionId: chatId,
     name: "chat",
     userId: session.user.id,
   });
 
   return createDataStreamResponse({
     execute: async (dataStream) => {
-      const now = new Date();
-      const isoNow = now.toISOString();
-      const humanNow =
-        now.toLocaleString("en-US", { timeZone: "UTC", hour12: false }) +
-        " UTC";
-
-      const result = streamText({
-        model,
+      const result = streamFromDeepSearch({
         messages,
-        system: `You are a research assistant. The current date/time is ${humanNow} (ISO: ${isoNow}). When the user asks for anything time-sensitive ("today", "current", "latest", events, prices, weather, sports, news, releases, rankings) you MUST:
-- Explicitly reference that the knowledge cutoff of the underlying model may be earlier, but you have real-time search tools.
-- Use the provided current date to interpret relative temporal expressions (e.g. "last week", "next month").
-- Prefer the most recently dated high-quality sources (verify publication or last updated dates) and cite their dates inline when relevant.
-
-ALWAYS:
-1. Run searchWeb for every new user question (unless the user explicitly restricts you to prior chat context only).
-2. Immediately AFTER searchWeb, you MUST call scrapePages on a DIVERSE SET of 4-6 high-value URLs (authoritative docs, standards, academic / reputable articles, vendor sources, contrasting viewpoints). Do not skip scrapePages. Diversity means avoid picking multiple pages from the same host unless necessary (at most 2 from one domain).
-
-Detailed Policy:
-- Target Count: 4-6 pages per query. Fewer only if absolutely no other relevant distinct domains exist. More than 6 only if user explicitly demands a broad survey.
-- Domain Diversity: Prefer distinct domains. If many results are from one domain, include only the single most authoritative deep page plus maybe one complementary page.
-- Content Type Diversity: Mix at least two types where possible (e.g., official docs + blog analysis + standard/spec + news/announcement + academic/benchmark).
-- Mandatory scrapePages: Even if snippets look sufficient you still fetch full content to reduce hallucination risk.
-- Exclusions: Skip obvious duplicates, shallow link farms, SEO spam, and pages with extremely thin content.
-
-Answer Construction Rules (USE DATES WHEN PRESENT):
-1. After scraping, synthesize using the FULL PAGE markdown (not raw dumps). Extract only the most relevant sections; do not paste entire pages.
-2. Citations: Every factual statement must include an inline markdown citation [Title](URL). If the publication or last updated date is known, append it in parentheses like [Title](URL) (2025-08-24). Never expose a bare URL.
-3. Consolidate: If multiple scraped sources agree, cite the strongest one; use others for edge nuances.
-4. Structure: Provide a concise direct answer first, then deeper thematic sections (Overview, Key Points, Comparison, Data/Benchmarks, Risks, Recommendations, etc.).
-5. Sources Section: Bullet list '- [Title](URL): brief relevance'. Include all scraped sources actually used. If a selected crawl failed but its absence limits completeness, list it with '(crawl failed)'.
-6. Formatting: Pure markdown. No HTML. Use fenced code blocks for code or data tables (markdown tables acceptable when helpful).
-7. Conversation Exception: Only skip tools for clearly personal/off-topic chit-chat with no external info value; this is rare.
-8. Insufficient Coverage: If initial search lacks diversity or depth, perform refined follow-up search queries (e.g., add keywords for alternative tech, criticism, benchmarks) until you can assemble 4-6 diverse high-value pages, then scrape them.
-
-If the user asks for something that is inherently unknowable in real time (future predictions, unreleased data), state the limitation clearly and provide the most recent available dated information instead.
-
-Never fabricate citations or URLs.`,
-        tools: {
-          searchWeb: {
-            parameters: z.object({
-              query: z.string().describe("The query to search the web for"),
-            }),
-            execute: async ({ query }, { abortSignal }) => {
-              const results = await searchSerper(
-                { q: query, num: 10 },
-                abortSignal,
-              );
-              return results.organic.map((result) => ({
-                title: result.title,
-                link: result.link,
-                snippet: result.snippet,
-                date: result.date || null,
-              }));
-            },
-          },
-          scrapePages: {
-            parameters: z.object({
-              urls: z
-                .array(z.string().url())
-                .min(4)
-                .max(6)
-                .describe(
-                  "A diverse set of 4-6 high-value, distinct-domain page URLs to fetch full markdown content for (avoid >2 from same domain)",
-                ),
-            }),
-            execute: async ({ urls }) => {
-              const crawlResult = await bulkCrawlWebsites({ urls });
-              return crawlResult;
-            },
-          },
-        },
-        maxSteps: 10,
         onFinish: async ({ response }) => {
           try {
-            const responseMessages = response.messages;
-            const updatedMessages = appendResponseMessages({
-              messages,
-              responseMessages,
-            });
+            const responseMessages = response.messages.filter(
+              (m) => m.role === "assistant",
+            ) as Message[];
+            const updatedMessages = [...messages, ...responseMessages];
             await upsertChat({
               userId: session.user.id,
               chatId,
               title: chatTitle || "Chat",
               messages: updatedMessages,
             });
-            // Flush telemetry so trace & spans are exported before request ends
             try {
               await langfuse.flushAsync();
             } catch (e) {
@@ -220,12 +140,10 @@ Never fabricate citations or URLs.`,
             console.error("Failed to persist completed chat", e);
           }
         },
-        experimental_telemetry: {
+        telemetry: {
           isEnabled: true,
-          functionId: "agent", // identifier for function/span in Langfuse dashboard
-          metadata: {
-            langfuseTraceId: trace.id,
-          },
+          functionId: "agent",
+          metadata: { langfuseTraceId: trace.id },
         },
       });
 
@@ -233,8 +151,6 @@ Never fabricate citations or URLs.`,
         dataStream.writeData({ type: "NEW_CHAT_CREATED", chatId: newChatId });
       }
 
-      // Remove early exposure of chat id; instead, only emit at end if it's a new chat.
-      // result.mergeIntoDataStream will pipe model tokens; afterwards we emit NEW_CHAT_CREATED if applicable.
       result.mergeIntoDataStream(dataStream);
     },
     onError: (e) => {
