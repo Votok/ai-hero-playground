@@ -9,12 +9,33 @@ import { deriveChatTitle } from "~/lib/utils";
 import { streamFromDeepSearch } from "~/lib/deep-search";
 import { Langfuse } from "langfuse";
 import { env } from "~/env";
+import { checkRateLimit, recordRateLimit } from "~/server/redis/rate-limit";
 
 export const maxDuration = 60;
 
 const DAILY_REQUEST_LIMIT = 1;
 
 export async function POST(request: Request) {
+  // Global LLM usage rate limit (test configuration: 1 request / 5 seconds)
+  const globalRateLimitConfig = {
+    maxRequests: 1,
+    windowMs: 5_000,
+    keyPrefix: "global_llm", // shared across all users
+    maxRetries: 3,
+  } as const;
+
+  // Non-destructive check first; if not allowed attempt retries (waiting for window reset)
+  const globalCheck = await checkRateLimit(globalRateLimitConfig);
+  if (!globalCheck.allowed) {
+    console.error("Global rate limit exceeded, waiting...");
+    const allowedAfterWait = await globalCheck.retry();
+    if (!allowedAfterWait) {
+      return new Response("Rate limit exceeded", { status: 429 });
+    }
+  }
+  // Record usage (increments counter for this window)
+  await recordRateLimit(globalRateLimitConfig);
+
   const session = await auth();
   if (!session) {
     return new Response("Unauthorized", { status: 401 });
