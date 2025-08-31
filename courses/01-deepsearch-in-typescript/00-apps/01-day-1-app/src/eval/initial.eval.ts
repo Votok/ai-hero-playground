@@ -23,6 +23,45 @@ evalite("Deep Search Eval", {
           },
         ],
       },
+      {
+        input: [
+          {
+            id: "3",
+            role: "user",
+            content: "What are notable tech IPOs this year?",
+          },
+        ],
+      },
+      {
+        input: [
+          {
+            id: "4",
+            role: "user",
+            content:
+              "Compare the architectures of Vercel AI SDK, LangChain, and LlamaIndex.",
+          },
+        ],
+      },
+      {
+        input: [
+          {
+            id: "5",
+            role: "user",
+            content:
+              "Summarize the recent advances in retrieval augmented generation (RAG).",
+          },
+        ],
+      },
+      {
+        input: [
+          {
+            id: "6",
+            role: "user",
+            content:
+              "Provide an in-depth overview of vector database design considerations.",
+          },
+        ],
+      },
     ];
   },
   task: async (input) => {
