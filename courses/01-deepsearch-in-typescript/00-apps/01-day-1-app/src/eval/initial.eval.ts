@@ -1,84 +1,52 @@
 import { evalite } from "evalite";
 import { askDeepSearch } from "~/lib/deep-search";
 import type { Message } from "ai";
+import { Factuality } from "./factuality-scorer";
 
 evalite("Deep Search Eval", {
-  data: async (): Promise<{ input: Message[] }[]> => {
+  data: async (): Promise<{ input: string; expected: string }[]> => {
     return [
       {
-        input: [
-          {
-            id: "1",
-            role: "user",
-            content: "What is the latest version of TypeScript?",
-          },
-        ],
+        input: "What is the latest version of TypeScript?",
+        expected: `TypeScript 5.9.2 (latest patch of 5.9) was released July 31, 2025. Install with: npm install --save-dev typescript@latest (or pnpm add -D typescript). Key 5.9 highlights: improved control flow narrowing in complex conditional chains, faster incremental builds via optimized project reference invalidation, expanded JSDoc support (stricter @deprecated and @example formatting checks), better inference for satisfies + template literal types, editor ergonomics improvements (more precise quick fixes & refactor suggestions), and updated lib.d.ts reflecting recent ECMAScript proposals. See official announcement blog “Announcing TypeScript 5.9” for full changelog.`,
       },
       {
-        input: [
-          {
-            id: "2",
-            role: "user",
-            content: "What are the main features of Next.js 15?",
-          },
-        ],
-      },
-      {
-        input: [
-          {
-            id: "3",
-            role: "user",
-            content: "What are notable tech IPOs this year?",
-          },
-        ],
-      },
-      {
-        input: [
-          {
-            id: "4",
-            role: "user",
-            content:
-              "Compare the architectures of Vercel AI SDK, LangChain, and LlamaIndex.",
-          },
-        ],
-      },
-      {
-        input: [
-          {
-            id: "5",
-            role: "user",
-            content:
-              "Summarize the recent advances in retrieval augmented generation (RAG).",
-          },
-        ],
-      },
-      {
-        input: [
-          {
-            id: "6",
-            role: "user",
-            content:
-              "Provide an in-depth overview of vector database design considerations.",
-          },
-        ],
+        input: "What are the main features of Next.js 15?",
+        expected: `@next/codemod CLI: Easily upgrade to the latest Next.js and React versions.
+Async Request APIs (Breaking): Incremental step towards a simplified rendering and caching model.
+Caching Semantics (Breaking): fetch requests, GET Route Handlers, and client navigations are no longer cached by default.
+React 19 Support: Support for React 19, React Compiler (Experimental), and hydration error improvements.
+Turbopack Dev (Stable): Performance and stability improvements.
+Static Indicator: New visual indicator shows static routes during development.
+unstable_after API (Experimental): Execute code after a response finishes streaming.
+instrumentation.js API (Stable): New API for server lifecycle observability.
+Enhanced Forms (next/form): Enhance HTML forms with client-side navigation.
+next.config: TypeScript support for next.config.ts.
+Self-hosting Improvements: More control over Cache-Control headers.
+Server Actions Security: Unguessable endpoints and removal of unused actions.
+Bundling External Packages (Stable): New config options for App and Pages Router.
+ESLint 9 Support: Added support for ESLint 9.
+Development and Build Performance: Improved build times and Faster Fast Refresh.`,
       },
     ];
   },
-  task: async (input) => {
-    return askDeepSearch(input);
+  task: async (input: string) => {
+    const messages: Message[] = [
+      { id: "user-1", role: "user", content: input },
+    ];
+    return askDeepSearch(messages);
   },
   scorers: [
     {
       name: "Contains Links",
       description: "Checks if the output contains any markdown links.",
       scorer: ({ output }) => {
-        // Match standard markdown links: [text](url) avoiding images ![alt](url)
-        // text: anything but newline or ] (lazy); url: anything but ) or whitespace
-        const markdownLinkRegex = /(?<!\!)\[[^\n\]]+?\]\([^\s)]+\)/g; // negative lookbehind to exclude images
+        const markdownLinkRegex = /(?<!\!)\[[^\n\]]+?\]\([^\s)]+\)/g;
         const containsLinks =
           typeof output === "string" && markdownLinkRegex.test(output);
-        return containsLinks ? 1 : 0; // deterministic binary score
+        return containsLinks ? 1 : 0;
       },
     },
+    Factuality,
   ],
 });
