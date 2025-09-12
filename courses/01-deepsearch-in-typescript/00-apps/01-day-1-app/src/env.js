@@ -23,6 +23,8 @@ export const env = createEnv({
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
+    // Which evaluation dataset tier to use. Controls how many test cases are loaded in evals.
+    EVAL_DATASET: z.enum(["dev", "ci", "regression"]).default("dev"),
   },
 
   /**
@@ -48,6 +50,7 @@ export const env = createEnv({
     LANGFUSE_PUBLIC_KEY: process.env.LANGFUSE_PUBLIC_KEY,
     LANGFUSE_BASEURL: process.env.LANGFUSE_BASEURL,
     NODE_ENV: process.env.NODE_ENV,
+    EVAL_DATASET: process.env.EVAL_DATASET,
   },
   /**
    * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially
