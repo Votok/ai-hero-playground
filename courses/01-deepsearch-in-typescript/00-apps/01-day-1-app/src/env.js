@@ -20,6 +20,18 @@ export const env = createEnv({
     // How many search results to request from the search provider for each query.
     // Coerced to number so callers can use it directly.
     SEARCH_RESULTS_COUNT: z.coerce.number().default(10),
+    // Minimum number of pages the model must scrape per query (diversity + depth).
+    SCRAPE_MIN_PAGES: z.coerce.number().int().min(1).default(4),
+    // Maximum number of pages the model should scrape unless user explicitly requests broader survey.
+    SCRAPE_MAX_PAGES: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .default(6)
+      .refine((val) => val >= 4, {
+        message:
+          "SCRAPE_MAX_PAGES should generally be >= 4 for adequate diversity",
+      }),
     LANGFUSE_SECRET_KEY: z.string(),
     LANGFUSE_PUBLIC_KEY: z.string(),
     LANGFUSE_BASEURL: z.string().url(),
@@ -50,6 +62,8 @@ export const env = createEnv({
     AUTH_DISCORD_SECRET: process.env.AUTH_DISCORD_SECRET,
     SERPER_API_KEY: process.env.SERPER_API_KEY,
     SEARCH_RESULTS_COUNT: process.env.SEARCH_RESULTS_COUNT,
+    SCRAPE_MIN_PAGES: process.env.SCRAPE_MIN_PAGES,
+    SCRAPE_MAX_PAGES: process.env.SCRAPE_MAX_PAGES,
     LANGFUSE_SECRET_KEY: process.env.LANGFUSE_SECRET_KEY,
     LANGFUSE_PUBLIC_KEY: process.env.LANGFUSE_PUBLIC_KEY,
     LANGFUSE_BASEURL: process.env.LANGFUSE_BASEURL,
@@ -67,3 +81,10 @@ export const env = createEnv({
    */
   emptyStringAsUndefined: true,
 });
+
+// Runtime invariant: ensure min <= max (cannot express cross-field constraint directly in current schema easily)
+if (env.SCRAPE_MIN_PAGES > env.SCRAPE_MAX_PAGES) {
+  throw new Error(
+    `Invalid configuration: SCRAPE_MIN_PAGES (${env.SCRAPE_MIN_PAGES}) > SCRAPE_MAX_PAGES (${env.SCRAPE_MAX_PAGES})`,
+  );
+}
