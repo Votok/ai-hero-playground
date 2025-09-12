@@ -2,6 +2,7 @@ import { evalite } from "evalite";
 import { askDeepSearch } from "~/lib/deep-search";
 import type { Message } from "ai";
 import { Factuality } from "./factuality-scorer";
+import { AnswerRelevancy } from "./answer-relevancy-scorer";
 import { devData } from "./evals/dev";
 import { ciData } from "./evals/ci";
 import { regressionData } from "./evals/regression";
@@ -36,5 +37,6 @@ evalite("Deep Search Eval", {
       },
     },
     Factuality,
+    AnswerRelevancy,
   ],
 });
