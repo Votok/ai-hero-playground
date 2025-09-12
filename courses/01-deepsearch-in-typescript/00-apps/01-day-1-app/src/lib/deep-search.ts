@@ -3,6 +3,7 @@ import { streamText, type Message, type TelemetrySettings } from "ai";
 import { model } from "~/lib/model";
 import { searchSerper } from "~/serper";
 import { bulkCrawlWebsites } from "~/server/crawler/crawl";
+import { env } from "~/env";
 
 /**
  * Shared system prompt used by deep search chat + evals.
@@ -66,7 +67,7 @@ export function streamFromDeepSearch(opts: StreamFromDeepSearchOptions) {
         }),
         execute: async ({ query }, { abortSignal }) => {
           const results = await searchSerper(
-            { q: query, num: 10 },
+            { q: query, num: env.SEARCH_RESULTS_COUNT },
             abortSignal,
           );
           return results.organic.map((result) => ({
