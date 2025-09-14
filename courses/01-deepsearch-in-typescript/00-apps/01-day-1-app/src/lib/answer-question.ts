@@ -50,9 +50,11 @@ export function answerQuestion(
   const system = buildAnswerSystemPrompt(opts);
   const queryHistory = context.getQueryHistory();
   const scrapeHistory = context.getScrapeHistory();
+  const convoHistory = context.getConversationHistory();
 
   const userPrompt = [
-    "QUESTION:\n" + opts.question,
+    "CONVERSATION HISTORY (earlier turns):\n" + (convoHistory || "(none)"),
+    "QUESTION (latest user message):\n" + opts.question,
     "SEARCH HISTORY (queries + snippets):\n" + (queryHistory || "(none)"),
     "SCRAPED PAGE CONTENT:\n" + (scrapeHistory || "(none)"),
     "Produce the final answer now following the system rules.",

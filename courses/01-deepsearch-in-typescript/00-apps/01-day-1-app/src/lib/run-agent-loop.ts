@@ -1,6 +1,7 @@
 import { getNextAction } from "~/lib/next-action";
 import type { WriteMessageAnnotationFn } from "~/lib/annotations";
 import { SystemContext } from "~/lib/system-context";
+import type { Message } from "ai";
 import { answerQuestion } from "~/lib/answer-question";
 import type { StreamTextResult } from "ai";
 import { searchSerper } from "~/serper";
@@ -39,6 +40,8 @@ export interface RunAgentLoopOptions {
   writeMessageAnnotation?: WriteMessageAnnotationFn;
   /** Optional Langfuse trace id to wire into all LLM calls for observability. */
   langfuseTraceId?: string;
+  /** Full chat message history including the latest user question. */
+  messages?: Message[];
 }
 
 /**
@@ -48,7 +51,22 @@ export async function runAgentLoop(
   question: string,
   options: RunAgentLoopOptions = {},
 ): Promise<StreamTextResult<{}, string>> {
-  const ctx = new SystemContext(question);
+  // Derive prior messages excluding the last user question (already provided as question)
+  let prior: { role: string; content: string }[] = [];
+  if (options.messages && options.messages.length) {
+    // Filter out system/tool/assistant messages to keep focused context (we keep assistant + user though for coherence)
+    // We'll include everything except we skip the final user message since it's "question"
+    const lastUserIndex = [...options.messages]
+      .reverse()
+      .find((m) => m.role === "user");
+    const lastUserContent = (lastUserIndex as any)?.content?.toString?.();
+    prior = options.messages
+      .filter((m) => m.role === "user" || m.role === "assistant")
+      .filter((m) => m.content?.toString() !== lastUserContent)
+      .map((m) => ({ role: m.role, content: m.content.toString() }));
+  }
+
+  const ctx = new SystemContext(question, { priorMessages: prior });
   const maxSteps = options.maxSteps ?? 10;
   const writeAnnotation: WriteMessageAnnotationFn =
     options.writeMessageAnnotation ?? (() => {});

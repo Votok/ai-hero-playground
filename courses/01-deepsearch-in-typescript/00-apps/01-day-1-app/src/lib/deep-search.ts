@@ -77,6 +77,7 @@ export async function streamFromDeepSearch(
     writeMessageAnnotation: opts.writeMessageAnnotation,
     // Pass through trace id if provided (evals may disable telemetry)
     langfuseTraceId: opts.langfuseTraceId,
+    messages: opts.messages,
   });
 
   // Invoke onFinish hook after stream fully consumed if provided

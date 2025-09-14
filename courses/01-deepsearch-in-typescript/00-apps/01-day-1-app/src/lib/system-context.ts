@@ -40,8 +40,19 @@ export class SystemContext {
   /** The history of all URLs scraped */
   private scrapeHistory: ScrapeResult[] = [];
 
-  constructor(question: string) {
+  /** Prior conversation messages (excluding the latest user question already in question) */
+  private priorMessages: { role: string; content: string }[] = [];
+
+  constructor(
+    question: string,
+    opts?: { priorMessages?: { role: string; content: string }[] },
+  ) {
     this.question = question;
+    if (opts?.priorMessages?.length) {
+      // Shallow copy & trim excessively long histories (keep last 12 to stay concise)
+      const MAX_HISTORY = 12;
+      this.priorMessages = opts.priorMessages.slice(-MAX_HISTORY);
+    }
   }
 
   /** Get original user question */
@@ -100,6 +111,14 @@ export class SystemContext {
           `</scrape_result>`,
         ].join("\n\n"),
       )
+      .join("\n\n");
+  }
+
+  /** Formatted prior conversation history for LLM consumption (may be empty). */
+  getConversationHistory(): string {
+    if (!this.priorMessages.length) return "";
+    return this.priorMessages
+      .map((m, i) => `### ${i + 1}. ${m.role.toUpperCase()}\n${m.content}`)
       .join("\n\n");
   }
 }
