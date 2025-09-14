@@ -7,6 +7,7 @@ import { and, eq, gte, count } from "drizzle-orm";
 import { upsertChat } from "~/server/db/chat";
 import { deriveChatTitle } from "~/lib/utils";
 import { streamFromDeepSearch } from "~/lib/deep-search";
+import type { OurMessageAnnotation } from "~/lib/annotations";
 import { Langfuse } from "langfuse";
 import { env } from "~/env";
 import { checkRateLimit, recordRateLimit } from "~/server/redis/rate-limit";
@@ -165,6 +166,14 @@ export async function POST(request: Request) {
           isEnabled: true,
           functionId: "agent",
           metadata: { langfuseTraceId: trace.id },
+        },
+        writeMessageAnnotation: (annotation: OurMessageAnnotation) => {
+          // Ensure the annotation is JSON serializable (strip prototypes / methods if any)
+          const jsonAnnotation: OurMessageAnnotation = {
+            type: annotation.type,
+            action: { ...annotation.action },
+          } as any;
+          dataStream.writeMessageAnnotation(jsonAnnotation as any);
         },
       });
 

@@ -46,16 +46,31 @@ vi.mock("ai", async (orig) => {
       if (!g.__callCount) g.__callCount = 0;
       g.__callCount++;
       if (g.__callCount === 1) {
-        return { object: { type: "search", query: "test query" } };
+        return {
+          object: {
+            type: "search",
+            title: "Initial search",
+            reasoning: "Need baseline sources",
+            query: "test query",
+          },
+        };
       } else if (g.__callCount === 2) {
         return {
           object: {
             type: "scrape",
+            title: "Scraping pages",
+            reasoning: "Collect full content for synthesis",
             urls: ["https://example.com/a", "https://example.org/b"],
           },
         };
       }
-      return { object: { type: "answer" } };
+      return {
+        object: {
+          type: "answer",
+          title: "Producing final answer",
+          reasoning: "Sufficient diversity of sources gathered",
+        },
+      };
     },
     generateText: async ({ system, prompt }: any) => ({
       text: "Final Answer (mocked)",
@@ -78,7 +93,10 @@ describe("runAgentLoop", () => {
   });
 
   it("produces a final answer string", async () => {
-    const result = await runAgentLoop("What is an example question?");
-    expect(result).toContain("Final Answer");
+    const stream = await runAgentLoop("What is an example question?");
+    await stream.consumeStream();
+    const text = await stream.text;
+    // Our mocked generateText returns a synthesized answer referencing the question
+    expect(text).toContain("example question");
   });
 });

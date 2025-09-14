@@ -9,17 +9,24 @@ import { SystemContext } from "~/lib/system-context";
  * causes LLMs to produce partially merged objects. Instead we use a single
  * discriminant + optional payload fields with explicit conditional guidance.
  */
-export interface SearchAction {
+export interface BaseActionMeta {
+  /** Concise user-visible title for this step (e.g. "Searching Rust async runtime history"). */
+  title: string;
+  /** Short reasoning for why this action was chosen. Can contain brief markdown. */
+  reasoning: string;
+}
+
+export interface SearchAction extends BaseActionMeta {
   type: "search";
   query: string;
 }
 
-export interface ScrapeAction {
+export interface ScrapeAction extends BaseActionMeta {
   type: "scrape";
   urls: string[];
 }
 
-export interface AnswerAction {
+export interface AnswerAction extends BaseActionMeta {
   type: "answer";
 }
 
@@ -39,6 +46,16 @@ export const actionSchema = z
       .describe(
         `The type of action to take.\n- 'search': Perform a focused web search to gather missing information.\n- 'scrape': Fetch full page content for deeper synthesis (use after identifying promising URLs).\n- 'answer': Provide the final answer to the user (only when confident no further search/scrape materially improves quality).`,
       ),
+    title: z
+      .string()
+      .describe(
+        "Concise user-visible title for this step (<= 8 words). Examples: 'Searching HMRC industrial action', 'Scraping framework benchmarks', 'Producing final answer'.",
+      ),
+    reasoning: z
+      .string()
+      .describe(
+        "Short reasoning (1-3 sentences) explaining why this action is the optimal next step. Reference knowledge gaps or decision criteria. Use markdown lightly if helpful.",
+      ),
     query: z
       .string()
       .describe(
@@ -52,7 +69,9 @@ export const actionSchema = z
       )
       .optional(),
   })
-  .describe("Next action decision object");
+  .describe(
+    "Next action decision object including title + reasoning for UI transparency",
+  );
 
 /**
  * Build a decision-oriented system prompt leveraging existing deep search policy.
@@ -80,7 +99,7 @@ function buildDecisionPrompt(context: SystemContext): string {
     `Previous Queries (if any):\n${queryHistory || "(none)"}\n\n` +
     `Previous Scrapes (if any):\n${scrapeHistory || "(none)"}\n\n` +
     `FIRST STEP RULE: If step is 0 you MUST perform a 'search' using a high-quality query derived directly from the user question (do not answer yet and do not scrape before searching).\n\n` +
-    `Decide the next action now. Return ONLY the structured JSON object (no explanation).`
+    `Decide the next action now. Return ONLY the structured JSON object with fields: type, title, reasoning, and conditional fields (query or urls). Do not include any extra commentary outside JSON.`
   );
 }
 
@@ -106,6 +125,9 @@ export async function getNextAction(context: SystemContext): Promise<Action> {
   }
   if (action.type === "scrape" && (!action.urls || action.urls.length === 0)) {
     throw new Error("Model returned scrape action without urls");
+  }
+  if (!action.title || !action.reasoning) {
+    throw new Error("Model failed to supply title or reasoning");
   }
   return action;
 }

@@ -1,4 +1,5 @@
 import { getNextAction } from "~/lib/next-action";
+import type { WriteMessageAnnotationFn } from "~/lib/annotations";
 import { SystemContext } from "~/lib/system-context";
 import { answerQuestion } from "~/lib/answer-question";
 import type { StreamTextResult } from "ai";
@@ -34,6 +35,8 @@ export interface RunAgentLoopOptions {
   maxSteps?: number;
   /** Optional AbortSignal for early cancellation. */
   signal?: AbortSignal;
+  /** Function to emit UI annotations about internal actions (no-op in evals). */
+  writeMessageAnnotation?: WriteMessageAnnotationFn;
 }
 
 /**
@@ -45,9 +48,14 @@ export async function runAgentLoop(
 ): Promise<StreamTextResult<{}, string>> {
   const ctx = new SystemContext(question);
   const maxSteps = options.maxSteps ?? 10;
+  const writeAnnotation: WriteMessageAnnotationFn =
+    options.writeMessageAnnotation ?? (() => {});
 
   while (ctx.getStep() < maxSteps) {
     const action = await getNextAction(ctx);
+
+    // Emit annotation so UI can render step trace
+    writeAnnotation({ type: "NEW_ACTION", action });
 
     if (action.type === "search") {
       const results = await searchWeb(action.query, options.signal);

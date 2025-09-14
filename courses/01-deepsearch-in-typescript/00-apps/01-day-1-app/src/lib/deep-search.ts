@@ -54,6 +54,9 @@ export interface StreamFromDeepSearchOptions {
     response: { messages: Message[] };
   }) => void | Promise<void>;
   telemetry: TelemetrySettings; // unused in stubbed loop version (placeholder for future tracing integration)
+  writeMessageAnnotation?: (
+    annotation: import("./annotations").OurMessageAnnotation,
+  ) => void;
 }
 
 /**
@@ -69,7 +72,10 @@ export async function streamFromDeepSearch(
     .find((m) => m.role === "user");
   const question = lastUserMessage?.content?.toString() ?? "";
 
-  const streamResult = await runAgentLoop(question, { maxSteps: 10 });
+  const streamResult = await runAgentLoop(question, {
+    maxSteps: 10,
+    writeMessageAnnotation: opts.writeMessageAnnotation,
+  });
 
   // Invoke onFinish hook after stream fully consumed if provided
   // (call site may still merge early; leaving hook responsibility external for now)
