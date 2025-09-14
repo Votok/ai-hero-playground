@@ -53,7 +53,7 @@ export interface StreamFromDeepSearchOptions {
   onFinish?: (args: {
     response: { messages: Message[] };
   }) => void | Promise<void>;
-  telemetry: TelemetrySettings; // unused in stubbed loop version (placeholder for future tracing integration)
+  langfuseTraceId?: string;
   writeMessageAnnotation?: (
     annotation: import("./annotations").OurMessageAnnotation,
   ) => void;
@@ -75,6 +75,8 @@ export async function streamFromDeepSearch(
   const streamResult = await runAgentLoop(question, {
     maxSteps: 10,
     writeMessageAnnotation: opts.writeMessageAnnotation,
+    // Pass through trace id if provided (evals may disable telemetry)
+    langfuseTraceId: opts.langfuseTraceId,
   });
 
   // Invoke onFinish hook after stream fully consumed if provided
@@ -103,7 +105,7 @@ export async function askDeepSearch(messages: Message[]): Promise<string> {
   const result = await streamFromDeepSearch({
     messages,
     onFinish: () => {},
-    telemetry: { isEnabled: false },
+    langfuseTraceId: undefined,
   });
   await result.consumeStream();
   return await result.text;

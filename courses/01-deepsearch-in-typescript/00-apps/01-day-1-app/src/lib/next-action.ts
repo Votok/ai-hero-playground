@@ -109,12 +109,24 @@ function buildDecisionPrompt(context: SystemContext): string {
  * Output: Action object (search | scrape | answer).
  * Error Modes: Throws if model violates required conditional fields.
  */
-export async function getNextAction(context: SystemContext): Promise<Action> {
+export async function getNextAction(
+  context: SystemContext,
+  opts: { langfuseTraceId?: string } = {},
+): Promise<Action> {
   const result = await generateObject({
     model,
     schema: actionSchema,
     prompt: buildDecisionPrompt(context),
     temperature: 0.2, // low temperature for determinism in control decisions
+    ...(opts.langfuseTraceId
+      ? {
+          experimental_telemetry: {
+            isEnabled: true,
+            functionId: `agent.next-action.step-${context.getStep()}`,
+            metadata: { langfuseTraceId: opts.langfuseTraceId },
+          },
+        }
+      : {}),
   });
 
   const action = result.object as Action; // validated by schema

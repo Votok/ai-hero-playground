@@ -8,6 +8,8 @@ export interface AnswerQuestionOptions {
   question: string;
   /** If true, we ran out of allowed steps and must give our best effort with what we have. */
   isFinal?: boolean;
+  /** Optional Langfuse trace id for telemetry correlation across loop calls. */
+  langfuseTraceId?: string;
 }
 
 // Build a system prompt containing only role + rules (no variable history)
@@ -61,6 +63,15 @@ export function answerQuestion(
     system,
     prompt: userPrompt,
     temperature: 0.4,
+    ...(opts.langfuseTraceId
+      ? {
+          experimental_telemetry: {
+            isEnabled: true,
+            functionId: `agent.answer${opts.isFinal ? ".final" : ""}`,
+            metadata: { langfuseTraceId: opts.langfuseTraceId },
+          },
+        }
+      : {}),
     experimental_transform: [
       // First smooth the incoming raw small tokens into line-sized chunks for better UX
       smoothStream({ delayInMs: 120, chunking: "word" }),

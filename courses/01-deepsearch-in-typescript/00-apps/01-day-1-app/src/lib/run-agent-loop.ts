@@ -37,6 +37,8 @@ export interface RunAgentLoopOptions {
   signal?: AbortSignal;
   /** Function to emit UI annotations about internal actions (no-op in evals). */
   writeMessageAnnotation?: WriteMessageAnnotationFn;
+  /** Optional Langfuse trace id to wire into all LLM calls for observability. */
+  langfuseTraceId?: string;
 }
 
 /**
@@ -52,7 +54,9 @@ export async function runAgentLoop(
     options.writeMessageAnnotation ?? (() => {});
 
   while (ctx.getStep() < maxSteps) {
-    const action = await getNextAction(ctx);
+    const action = await getNextAction(ctx, {
+      langfuseTraceId: options.langfuseTraceId,
+    });
 
     // Emit annotation so UI can render step trace
     writeAnnotation({ type: "NEW_ACTION", action });
@@ -83,12 +87,19 @@ export async function runAgentLoop(
         }),
       );
     } else if (action.type === "answer") {
-      return answerQuestion(ctx, { question });
+      return answerQuestion(ctx, {
+        question,
+        langfuseTraceId: options.langfuseTraceId,
+      });
     }
 
     ctx.advanceStep();
   }
 
   // Exceeded steps without explicit answer request.
-  return answerQuestion(ctx, { question, isFinal: true });
+  return answerQuestion(ctx, {
+    question,
+    isFinal: true,
+    langfuseTraceId: options.langfuseTraceId,
+  });
 }

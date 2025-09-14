@@ -162,11 +162,7 @@ export async function POST(request: Request) {
             console.error("Failed to persist completed chat", e);
           }
         },
-        telemetry: {
-          isEnabled: true,
-          functionId: "agent",
-          metadata: { langfuseTraceId: trace.id },
-        },
+        langfuseTraceId: trace.id,
         writeMessageAnnotation: (annotation: OurMessageAnnotation) => {
           // Ensure the annotation is JSON serializable (strip prototypes / methods if any)
           const jsonAnnotation: OurMessageAnnotation = {
