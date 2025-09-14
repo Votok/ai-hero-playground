@@ -139,6 +139,8 @@ export async function POST(request: Request) {
 
   return createDataStreamResponse({
     execute: async (dataStream) => {
+      // Collect annotations during the streaming lifecycle so we can attach to final assistant message
+      const annotations: OurMessageAnnotation[] = [];
       const result = await streamFromDeepSearch({
         messages,
         onFinish: async ({ response }) => {
@@ -147,6 +149,13 @@ export async function POST(request: Request) {
               (m) => m.role === "assistant",
             ) as Message[];
             const updatedMessages = [...messages, ...responseMessages];
+            // Attach collected annotations to the last assistant message
+            const lastAssistant = [...updatedMessages]
+              .reverse()
+              .find((m) => m.role === "assistant") as any;
+            if (lastAssistant) {
+              lastAssistant.annotations = annotations;
+            }
             await upsertChat({
               userId: session.user.id,
               chatId,
@@ -164,6 +173,7 @@ export async function POST(request: Request) {
         },
         langfuseTraceId: trace.id,
         writeMessageAnnotation: (annotation: OurMessageAnnotation) => {
+          annotations.push(annotation); // keep in memory for later persistence
           // Ensure the annotation is JSON serializable (strip prototypes / methods if any)
           const jsonAnnotation: OurMessageAnnotation = {
             type: annotation.type,

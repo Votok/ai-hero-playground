@@ -72,10 +72,10 @@ export const ChatPage = ({
             return (
               <ChatMessage
                 key={index}
-                parts={message.parts}
+                parts={message.parts ?? []}
                 role={message.role}
                 userName={userName}
-                annotations={(message as any).annotations}
+                annotations={(message as any).annotations ?? []}
               />
             );
           })}

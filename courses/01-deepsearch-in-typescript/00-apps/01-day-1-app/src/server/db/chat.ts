@@ -5,13 +5,17 @@ import type { Message as AiMessage } from "ai";
 
 // Helper to map AI SDK messages to DB message inserts
 const mapMessages = (chatId: string, items: AiMessage[]) => {
-  return items.map((m, idx) => ({
-    id: (m as any).id ?? crypto.randomUUID(),
-    chatId,
-    role: m.role,
-    parts: (m as any).parts ?? (m as any).content ?? null,
-    order: idx,
-  }));
+  return items.map((m, idx) => {
+    const anyMsg = m as any;
+    return {
+      id: anyMsg.id ?? crypto.randomUUID(),
+      chatId,
+      role: m.role,
+      parts: anyMsg.parts ?? anyMsg.content ?? null,
+      annotations: anyMsg.annotations ?? null,
+      order: idx,
+    };
+  });
 };
 
 export const upsertChat = async (opts: {

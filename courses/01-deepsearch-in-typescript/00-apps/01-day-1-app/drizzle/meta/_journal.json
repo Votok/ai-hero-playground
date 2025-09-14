@@ -22,6 +22,13 @@
       "when": 1755962567948,
       "tag": "0002_shocking_gauntlet",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1757855074142,
+      "tag": "0003_nifty_odin",
+      "breakpoints": true
     }
   ]
 }

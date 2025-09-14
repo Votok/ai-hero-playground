@@ -10,6 +10,8 @@ export interface AnswerQuestionOptions {
   isFinal?: boolean;
   /** Optional Langfuse trace id for telemetry correlation across loop calls. */
   langfuseTraceId?: string;
+  /** Callback when streaming finishes so caller can persist state including annotations. */
+  onFinish?: (result: StreamTextResult<{}, string>) => void | Promise<void>;
 }
 
 // Build a system prompt containing only role + rules (no variable history)
@@ -60,11 +62,16 @@ export function answerQuestion(
     "Produce the final answer now following the system rules.",
   ].join("\n\n");
 
-  return streamText({
+  const stream = streamText({
     model,
     system,
     prompt: userPrompt,
     temperature: 0.4,
+    onFinish: () => {
+      if (opts.onFinish) {
+        void opts.onFinish(stream);
+      }
+    },
     ...(opts.langfuseTraceId
       ? {
           experimental_telemetry: {
@@ -81,4 +88,5 @@ export function answerQuestion(
       markdownJoinerTransform(),
     ],
   });
+  return stream;
 }

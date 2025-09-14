@@ -42,6 +42,8 @@ export interface RunAgentLoopOptions {
   langfuseTraceId?: string;
   /** Full chat message history including the latest user question. */
   messages?: Message[];
+  /** onFinish callback for final answer streaming */
+  onFinish?: (result: StreamTextResult<{}, string>) => void | Promise<void>;
 }
 
 /**
@@ -108,6 +110,7 @@ export async function runAgentLoop(
       return answerQuestion(ctx, {
         question,
         langfuseTraceId: options.langfuseTraceId,
+        onFinish: options.onFinish,
       });
     }
 
@@ -119,5 +122,6 @@ export async function runAgentLoop(
     question,
     isFinal: true,
     langfuseTraceId: options.langfuseTraceId,
+    onFinish: options.onFinish,
   });
 }

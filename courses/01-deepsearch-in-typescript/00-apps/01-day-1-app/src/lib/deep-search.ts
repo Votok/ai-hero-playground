@@ -75,26 +75,20 @@ export async function streamFromDeepSearch(
   const streamResult = await runAgentLoop(question, {
     maxSteps: 10,
     writeMessageAnnotation: opts.writeMessageAnnotation,
-    // Pass through trace id if provided (evals may disable telemetry)
     langfuseTraceId: opts.langfuseTraceId,
     messages: opts.messages,
+    onFinish: async (result) => {
+      if (opts.onFinish) {
+        await opts.onFinish({
+          response: {
+            messages: [
+              { role: "assistant", content: await result.text },
+            ] as any,
+          },
+        });
+      }
+    },
   });
-
-  // Invoke onFinish hook after stream fully consumed if provided
-  // (call site may still merge early; leaving hook responsibility external for now)
-  if (opts.onFinish) {
-    // We emulate the previous onFinish contract minimally
-    void Promise.resolve(streamResult.text).then(async (text) => {
-      await opts.onFinish!({
-        response: {
-          messages: [
-            { role: "assistant", content: await streamResult.text },
-          ] as any,
-        },
-      });
-    });
-  }
-
   return streamResult;
 }
 
