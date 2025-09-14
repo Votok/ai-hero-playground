@@ -1,6 +1,7 @@
-import { streamText, type StreamTextResult } from "ai";
+import { streamText, smoothStream, type StreamTextResult } from "ai";
 import { model } from "~/lib/model";
 import { SystemContext } from "~/lib/system-context";
+import { markdownJoinerTransform } from "~/lib/markdown-joiner";
 
 export interface AnswerQuestionOptions {
   /** The original user question we are trying to answer. */
@@ -60,5 +61,11 @@ export function answerQuestion(
     system,
     prompt: userPrompt,
     temperature: 0.4,
+    experimental_transform: [
+      // First smooth the incoming raw small tokens into line-sized chunks for better UX
+      smoothStream({ delayInMs: 120, chunking: "word" }),
+      // Then join markdown tokens like **bold** or [links](url) so they appear atomically
+      markdownJoinerTransform(),
+    ],
   });
 }
