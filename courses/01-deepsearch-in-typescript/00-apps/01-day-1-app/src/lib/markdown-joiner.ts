@@ -27,8 +27,8 @@ class MarkdownJoiner {
           this.clearBuffer();
         } else if (this.isFalsePositive(char)) {
           // False positive - flush buffer as raw text
-            output += this.buffer;
-            this.clearBuffer();
+          output += this.buffer;
+          this.clearBuffer();
         }
       }
     }
@@ -80,28 +80,30 @@ class MarkdownJoiner {
   }
 }
 
-export const markdownJoinerTransform = <TOOLS extends ToolSet>() => () => {
-  const joiner = new MarkdownJoiner();
+export const markdownJoinerTransform =
+  <TOOLS extends ToolSet>() =>
+  () => {
+    const joiner = new MarkdownJoiner();
 
-  return new TransformStream<TextStreamPart<TOOLS>, TextStreamPart<TOOLS>>({
-    transform(chunk, controller) {
-      if (chunk.type === "text-delta") {
-        const processedText = joiner.processText(chunk.textDelta);
-        if (processedText) {
-          controller.enqueue({ ...chunk, textDelta: processedText });
+    return new TransformStream<TextStreamPart<TOOLS>, TextStreamPart<TOOLS>>({
+      transform(chunk, controller) {
+        if (chunk.type === "text-delta") {
+          const processedText = joiner.processText(chunk.textDelta);
+          if (processedText) {
+            controller.enqueue({ ...chunk, textDelta: processedText });
+          }
+        } else {
+          controller.enqueue(chunk);
         }
-      } else {
-        controller.enqueue(chunk);
-      }
-    },
-    flush(controller) {
-      const remaining = joiner.flush();
-      if (remaining) {
-        controller.enqueue({
-          type: "text-delta",
-          textDelta: remaining,
-        } as TextStreamPart<TOOLS>);
-      }
-    },
-  });
-};
+      },
+      flush(controller) {
+        const remaining = joiner.flush();
+        if (remaining) {
+          controller.enqueue({
+            type: "text-delta",
+            textDelta: remaining,
+          } as TextStreamPart<TOOLS>);
+        }
+      },
+    });
+  };
