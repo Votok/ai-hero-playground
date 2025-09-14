@@ -1,4 +1,4 @@
-import { generateText } from "ai";
+import { streamText, type StreamTextResult } from "ai";
 import { model } from "~/lib/model";
 import { SystemContext } from "~/lib/system-context";
 
@@ -40,10 +40,10 @@ Wait for the user prompt that supplies QUESTION, SEARCH HISTORY, and SCRAPED CON
  * Generate an answer for the user question using accumulated context.
  * Returns plain markdown text.
  */
-export async function answerQuestion(
+export function answerQuestion(
   context: SystemContext,
   opts: AnswerQuestionOptions,
-): Promise<string> {
+): StreamTextResult<{}, string> {
   const system = buildAnswerSystemPrompt(opts);
   const queryHistory = context.getQueryHistory();
   const scrapeHistory = context.getScrapeHistory();
@@ -55,11 +55,10 @@ export async function answerQuestion(
     "Produce the final answer now following the system rules.",
   ].join("\n\n");
 
-  const { text } = await generateText({
+  return streamText({
     model,
     system,
     prompt: userPrompt,
     temperature: 0.4,
   });
-  return text;
 }

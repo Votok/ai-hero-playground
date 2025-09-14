@@ -29,6 +29,8 @@ const toQueryResult = (r: QueryResultSearchResult): string =>
  * Keeps internal arrays private and exposes read-only, LLM-optimized views.
  */
 export class SystemContext {
+  /** Original user question driving the loop */
+  private question: string;
   /** The current step in the loop */
   private step = 0;
 
@@ -37,6 +39,15 @@ export class SystemContext {
 
   /** The history of all URLs scraped */
   private scrapeHistory: ScrapeResult[] = [];
+
+  constructor(question: string) {
+    this.question = question;
+  }
+
+  /** Get original user question */
+  getQuestion(): string {
+    return this.question;
+  }
 
   /** Increment the internal step counter (invoked externally by loop driver). */
   advanceStep(): void {

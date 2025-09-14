@@ -1,6 +1,7 @@
 import { getNextAction } from "~/lib/next-action";
 import { SystemContext } from "~/lib/system-context";
 import { answerQuestion } from "~/lib/answer-question";
+import type { StreamTextResult } from "ai";
 import { searchSerper } from "~/serper";
 import { bulkCrawlWebsites } from "~/server/crawler/crawl";
 import { env } from "~/env";
@@ -41,8 +42,8 @@ export interface RunAgentLoopOptions {
 export async function runAgentLoop(
   question: string,
   options: RunAgentLoopOptions = {},
-): Promise<string> {
-  const ctx = new SystemContext();
+): Promise<StreamTextResult<{}, string>> {
+  const ctx = new SystemContext(question);
   const maxSteps = options.maxSteps ?? 10;
 
   while (ctx.getStep() < maxSteps) {
@@ -74,12 +75,12 @@ export async function runAgentLoop(
         }),
       );
     } else if (action.type === "answer") {
-      return await answerQuestion(ctx, { question });
+      return answerQuestion(ctx, { question });
     }
 
     ctx.advanceStep();
   }
 
   // Exceeded steps without explicit answer request.
-  return await answerQuestion(ctx, { question, isFinal: true });
+  return answerQuestion(ctx, { question, isFinal: true });
 }

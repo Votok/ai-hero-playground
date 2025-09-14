@@ -1,9 +1,10 @@
-import { z } from "zod";
-import { streamText, type Message, type TelemetrySettings } from "ai";
-import { model } from "~/lib/model";
-import { searchSerper } from "~/serper";
-import { bulkCrawlWebsites } from "~/server/crawler/crawl";
+import {
+  type Message,
+  type TelemetrySettings,
+  type StreamTextResult,
+} from "ai";
 import { env } from "~/env";
+import { runAgentLoop } from "~/lib/run-agent-loop";
 
 /**
  * Shared system prompt used by deep search chat + evals.
@@ -48,57 +49,44 @@ Never fabricate citations or URLs.`;
 
 export interface StreamFromDeepSearchOptions {
   messages: Message[];
-  onFinish?: Parameters<typeof streamText>[0]["onFinish"]; // optional for reuse in evals where persistence isn't needed
-  telemetry: TelemetrySettings;
+  // Keeping onFinish for API compatibility but it will be invoked manually after stream consumption for now
+  onFinish?: (args: {
+    response: { messages: Message[] };
+  }) => void | Promise<void>;
+  telemetry: TelemetrySettings; // unused in stubbed loop version (placeholder for future tracing integration)
 }
 
 /**
  * Core streaming function used by both the API route and evals.
  * Keeps tools & system prompt in one place.
  */
-export function streamFromDeepSearch(opts: StreamFromDeepSearchOptions) {
-  return streamText({
-    model,
-    messages: opts.messages,
-    maxSteps: 10,
-    system: buildSystemPrompt(),
-    tools: {
-      searchWeb: {
-        parameters: z.object({
-          query: z.string().describe("The query to search the web for"),
-        }),
-        execute: async ({ query }, { abortSignal }) => {
-          const results = await searchSerper(
-            { q: query, num: env.SEARCH_RESULTS_COUNT },
-            abortSignal,
-          );
-          return results.organic.map((result) => ({
-            title: result.title,
-            link: result.link,
-            snippet: result.snippet,
-            date: result.date || null,
-          }));
+export async function streamFromDeepSearch(
+  opts: StreamFromDeepSearchOptions,
+): Promise<StreamTextResult<{}, string>> {
+  // For now we only care about the latest user message to drive the loop.
+  const lastUserMessage = [...opts.messages]
+    .reverse()
+    .find((m) => m.role === "user");
+  const question = lastUserMessage?.content?.toString() ?? "";
+
+  const streamResult = await runAgentLoop(question, { maxSteps: 10 });
+
+  // Invoke onFinish hook after stream fully consumed if provided
+  // (call site may still merge early; leaving hook responsibility external for now)
+  if (opts.onFinish) {
+    // We emulate the previous onFinish contract minimally
+    void Promise.resolve(streamResult.text).then(async (text) => {
+      await opts.onFinish!({
+        response: {
+          messages: [
+            { role: "assistant", content: await streamResult.text },
+          ] as any,
         },
-      },
-      scrapePages: {
-        parameters: z.object({
-          urls: z
-            .array(z.string().url())
-            .min(env.SCRAPE_MIN_PAGES)
-            .max(env.SCRAPE_MAX_PAGES)
-            .describe(
-              `A diverse set of ${env.SCRAPE_MIN_PAGES}-${env.SCRAPE_MAX_PAGES} high-value, distinct-domain page URLs to fetch full markdown content for (avoid >2 from same domain)`,
-            ),
-        }),
-        execute: async ({ urls }) => {
-          const crawlResult = await bulkCrawlWebsites({ urls });
-          return crawlResult;
-        },
-      },
-    },
-    onFinish: opts.onFinish,
-    experimental_telemetry: opts.telemetry,
-  });
+      });
+    });
+  }
+
+  return streamResult;
 }
 
 /**
@@ -106,11 +94,11 @@ export function streamFromDeepSearch(opts: StreamFromDeepSearchOptions) {
  * No persistence or auth required.
  */
 export async function askDeepSearch(messages: Message[]): Promise<string> {
-  const result = streamFromDeepSearch({
+  const result = await streamFromDeepSearch({
     messages,
     onFinish: () => {},
     telemetry: { isEnabled: false },
   });
-  await result.consumeStream(); // ensure streaming completes
+  await result.consumeStream();
   return await result.text;
 }

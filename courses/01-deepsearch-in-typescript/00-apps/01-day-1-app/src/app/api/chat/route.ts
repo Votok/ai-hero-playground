@@ -138,7 +138,7 @@ export async function POST(request: Request) {
 
   return createDataStreamResponse({
     execute: async (dataStream) => {
-      const result = streamFromDeepSearch({
+      const result = await streamFromDeepSearch({
         messages,
         onFinish: async ({ response }) => {
           try {
