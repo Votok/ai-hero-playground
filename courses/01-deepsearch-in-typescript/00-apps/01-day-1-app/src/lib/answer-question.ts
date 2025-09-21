@@ -24,7 +24,7 @@ function buildAnswerSystemPrompt(opts: AnswerQuestionOptions): string {
 ${scarcityNote}
 
 Rules:
-1. Use ONLY the provided search result snippets & scraped page contents.
+1. Use ONLY the provided search result snippets & (summarized) page contents. Where a summary is provided, treat it as a faithful condensation of the underlying page; do not assume missing details. If only raw scrape content is present, use it directly.
 2. Every factual / quantitative claim must include an inline citation: [Title](URL) or [Title](URL) (YYYY-MM-DD) if a date is available.
 3. Consolidate overlapping sources—cite the strongest; add others only for nuance or disagreement.
 4. Answer structure:

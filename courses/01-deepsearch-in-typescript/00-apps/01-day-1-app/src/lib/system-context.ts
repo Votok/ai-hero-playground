@@ -8,6 +8,7 @@ export type SearchResult = {
   url: string;
   snippet: string; // snippet from search provider
   scrapedContent: string; // full (processed) page content (markdown) or error marker
+  summary?: string; // condensed summary produced by summarizer (optional)
 };
 
 export type SearchHistoryEntry = {
@@ -19,8 +20,20 @@ export type SearchHistoryEntry = {
  * Convert an individual unified search result (with scraped content) into an
  * LLM-friendly markdown block.
  */
-const toUnifiedResult = (r: SearchResult): string =>
-  [
+const toUnifiedResult = (r: SearchResult): string => {
+  // Prefer summary if present to reduce context size; include tiny marker that full content was summarized.
+  if (r.summary) {
+    return [
+      `### ${r.date} - ${r.title}`,
+      r.url,
+      r.snippet,
+      `<summary_result>`,
+      r.summary,
+      `</summary_result>`,
+      `<!-- summarized -->`,
+    ].join("\n\n");
+  }
+  return [
     `### ${r.date} - ${r.title}`,
     r.url,
     r.snippet,
@@ -28,6 +41,7 @@ const toUnifiedResult = (r: SearchResult): string =>
     r.scrapedContent,
     `</scrape_result>`,
   ].join("\n\n");
+};
 
 /**
  * Container for maintaining loop state across search + scrape iterations.

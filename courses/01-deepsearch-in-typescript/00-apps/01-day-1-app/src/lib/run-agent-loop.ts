@@ -7,6 +7,7 @@ import type { StreamTextResult } from "ai";
 import { searchSerper } from "~/serper";
 import { bulkCrawlWebsites } from "~/server/crawler/crawl";
 import { env } from "~/env";
+import { summarizeURL } from "~/lib/summarize-url";
 
 // Helper: perform a web search (serper) and immediately crawl each resulting URL.
 async function searchAndScrape(query: string, abortSignal?: AbortSignal) {
@@ -27,7 +28,8 @@ async function searchAndScrape(query: string, abortSignal?: AbortSignal) {
     crawl.results.map((r) => [r.url, r.result] as const),
   );
 
-  return organic.map((o) => {
+  // Build base result objects first (with raw scraped content / errors)
+  const baseResults = organic.map((o) => {
     const page = crawlMap.get(o.link);
     if (page && page.success) {
       return {
@@ -47,6 +49,35 @@ async function searchAndScrape(query: string, abortSignal?: AbortSignal) {
         page && !page.success ? `(error) ${page.error}` : "(no content)",
     };
   });
+
+  // Summarize only successful pages with real content (skip errors/no content)
+  const summaries = await Promise.all(
+    baseResults.map(async (r) => {
+      if (!r.scrapedContent || r.scrapedContent.startsWith("(error)"))
+        return null;
+      if (r.scrapedContent === "(no content)") return null;
+      try {
+        const res = await summarizeURL({
+          query,
+          url: r.url,
+          title: r.title,
+          // date might be 'unknown'
+          date: r.date,
+          snippet: r.snippet,
+          content: r.scrapedContent,
+        });
+        return res.summary;
+      } catch (e) {
+        console.error("summarizeURL failed", r.url, e);
+        return null;
+      }
+    }),
+  );
+
+  return baseResults.map((r, i) => ({
+    ...r,
+    summary: summaries[i] || undefined,
+  }));
 }
 
 export interface RunAgentLoopOptions {
