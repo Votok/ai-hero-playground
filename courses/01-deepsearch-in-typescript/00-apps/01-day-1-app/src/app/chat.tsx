@@ -7,7 +7,7 @@ import { SignInModal } from "~/components/sign-in-modal";
 import { useState, useEffect } from "react";
 import type { FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { isNewChatCreated } from "~/lib/utils";
+import { isNewChatCreated, isChatTitleUpdated } from "~/lib/utils";
 import type { Message } from "ai";
 
 interface ChatProps {
@@ -39,12 +39,17 @@ export const ChatPage = ({
   });
   const [showSignInModal, setShowSignInModal] = useState(false);
 
-  // Watch for new chat creation event
+  // Watch for special SSE data events
   useEffect(() => {
-    const last = data?.[data.length - 1];
+    if (!data || data.length === 0) return;
+    const last = data[data.length - 1];
     if (isNewChatCreated(last)) {
-      // Redirect to new chat id (preserve existing path)
       router.push(`?id=${last.chatId}`);
+      return;
+    }
+    if (isChatTitleUpdated(last)) {
+      // Trigger server component re-fetch of sidebar chats
+      router.refresh();
     }
   }, [data, router]);
 

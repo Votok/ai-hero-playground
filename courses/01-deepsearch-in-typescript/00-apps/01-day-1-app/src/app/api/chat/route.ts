@@ -5,7 +5,8 @@ import { db } from "~/server/db";
 import { userRequests, users, chats } from "~/server/db/schema";
 import { and, eq, gte, count } from "drizzle-orm";
 import { upsertChat } from "~/server/db/chat";
-import { deriveChatTitle } from "~/lib/utils";
+import { deriveChatTitle } from "~/lib/utils"; // still used as lightweight fallback before generation
+import { generateChatTitle } from "~/lib/generate-chat-title";
 import { streamFromDeepSearch } from "~/lib/deep-search";
 import type { OurMessageAnnotation } from "~/lib/annotations";
 import { Langfuse } from "langfuse";
@@ -86,6 +87,7 @@ export async function POST(request: Request) {
   let chatId = incomingChatId ?? crypto.randomUUID();
   let chatTitle: string | null = null;
   let newChatId: string | null = null; // track if a brand new chat was created
+  let titlePromise: Promise<string> | null = null;
 
   if (incomingChatId) {
     // Verify chat exists and belongs to user
@@ -105,19 +107,23 @@ export async function POST(request: Request) {
 
     chatTitle = existingRow.title ?? null;
   } else {
-    // New chat: derive a title from the first user message (if any)
+    // New chat: quick local derivation as interim (not final) title for placeholder
     chatTitle = deriveChatTitle(messages as any[]);
-
-    // Mark that we are creating a brand new chat now
     newChatId = chatId;
 
-    // Create the chat immediately with only the current (user) messages to guard against stream failures
+    // Kick off async generation (do not await here to avoid latency impact)
+    titlePromise = generateChatTitle(messages as any[]).catch((e) => {
+      console.error("Title generation failed", e);
+      return ""; // empty => skip update later
+    });
+
+    // Pre-create chat with placeholder while real title generates
     try {
       await upsertChat({
         userId: session.user.id,
         chatId,
-        title: chatTitle ?? "New Chat",
-        messages, // only user / existing messages for now
+        title: "Generating...", // placeholder visible to user quickly
+        messages, // only user messages for now
       });
     } catch (e) {
       console.error("Failed to pre-create chat", e);
@@ -156,12 +162,32 @@ export async function POST(request: Request) {
             if (lastAssistant) {
               lastAssistant.annotations = annotations;
             }
+            // Resolve potential title generation for new chats
+            let finalTitle = chatTitle || "Chat";
+            if (titlePromise) {
+              try {
+                const generated = (await titlePromise).trim();
+                if (generated && generated !== "Generating...") {
+                  finalTitle = generated.slice(0, 50);
+                }
+              } catch (e) {
+                console.error("Failed awaiting titlePromise", e);
+              }
+            }
             await upsertChat({
               userId: session.user.id,
               chatId,
-              title: chatTitle || "Chat",
+              title: finalTitle,
               messages: updatedMessages,
             });
+            if (newChatId && titlePromise) {
+              // Emit separate event to allow client to refresh chat list/sidebar
+              dataStream.writeData({
+                type: "CHAT_TITLE_UPDATED",
+                chatId,
+                title: finalTitle,
+              } as any);
+            }
             try {
               await langfuse.flushAsync();
             } catch (e) {

@@ -3,12 +3,30 @@ export interface NewChatCreatedEvent {
   chatId: string;
 }
 
+export interface ChatTitleUpdatedEvent {
+  type: "CHAT_TITLE_UPDATED";
+  chatId: string;
+  title: string;
+}
+
 export function isNewChatCreated(data: unknown): data is NewChatCreatedEvent {
   return (
     typeof data === "object" &&
     data !== null &&
     (data as any).type === "NEW_CHAT_CREATED" &&
     typeof (data as any).chatId === "string"
+  );
+}
+
+export function isChatTitleUpdated(
+  data: unknown,
+): data is ChatTitleUpdatedEvent {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    (data as any).type === "CHAT_TITLE_UPDATED" &&
+    typeof (data as any).chatId === "string" &&
+    typeof (data as any).title === "string"
   );
 }
 

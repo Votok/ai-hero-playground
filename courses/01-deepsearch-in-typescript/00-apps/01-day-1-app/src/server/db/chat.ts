@@ -21,7 +21,7 @@ const mapMessages = (chatId: string, items: AiMessage[]) => {
 export const upsertChat = async (opts: {
   userId: string;
   chatId: string;
-  title: string;
+  title?: string; // optional; if omitted existing title retained
   messages: AiMessage[];
 }) => {
   const { userId, chatId, title, messages: aiMessages } = opts;
@@ -38,12 +38,16 @@ export const upsertChat = async (opts: {
     }
 
     if (existing.length === 0) {
-      await tx.insert(chats).values({ id: chatId, userId, title });
+      await tx
+        .insert(chats)
+        .values({ id: chatId, userId, title: title ?? "New Chat" });
     } else {
-      // Update title + updatedAt
+      // Update updatedAt; include title only if provided
       await tx
         .update(chats)
-        .set({ title, updatedAt: new Date() })
+        .set(
+          title ? { title, updatedAt: new Date() } : { updatedAt: new Date() },
+        )
         .where(and(eq(chats.id, chatId), eq(chats.userId, userId)));
       // Delete existing messages
       await tx.delete(messages).where(eq(messages.chatId, chatId));
