@@ -17,7 +17,7 @@ export const env = createEnv({
     AUTH_DISCORD_ID: z.string(),
     AUTH_DISCORD_SECRET: z.string(),
     SERPER_API_KEY: z.string(),
-  TAVILY_API_KEY: z.string(),
+    TAVILY_API_KEY: z.string(),
     // How many search results to request from the search provider for each query.
     // Coerced to number so callers can use it directly.
     SEARCH_RESULTS_COUNT: z.coerce.number().default(6),
@@ -62,7 +62,7 @@ export const env = createEnv({
     AUTH_DISCORD_ID: process.env.AUTH_DISCORD_ID,
     AUTH_DISCORD_SECRET: process.env.AUTH_DISCORD_SECRET,
     SERPER_API_KEY: process.env.SERPER_API_KEY,
-  TAVILY_API_KEY: process.env.TAVILY_API_KEY,
+    TAVILY_API_KEY: process.env.TAVILY_API_KEY,
     SEARCH_RESULTS_COUNT: process.env.SEARCH_RESULTS_COUNT,
     SCRAPE_MIN_PAGES: process.env.SCRAPE_MIN_PAGES,
     SCRAPE_MAX_PAGES: process.env.SCRAPE_MAX_PAGES,
