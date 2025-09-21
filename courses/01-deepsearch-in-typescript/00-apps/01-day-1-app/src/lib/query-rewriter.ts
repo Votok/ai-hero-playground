@@ -7,6 +7,10 @@ export const queryPlanSchema = z
   .object({
     plan: z
       .string()
+      .min(40, {
+        message:
+          "Provide a meaningful multi-sentence research plan (>=40 characters).",
+      })
       .describe(
         "A concise but detailed multi-paragraph research plan (markdown allowed) explaining the logical sequence of information gathering steps.",
       ),
@@ -47,6 +51,11 @@ function buildPlannerPrompt(context: SystemContext): string {
     `- Avoid redundancy with already collected sources.\n` +
     `- Prefer specificity over generic breadth. Include temporal or geographic qualifiers only if relevant.\n` +
     `- If initial step, first query may be exploratory to establish baseline context.\n\n` +
+    `STRICT STYLE RULES:\n` +
+    `- Queries must NOT start with meta phrases like 'Need to', 'Confirm', 'Check', 'Determine', 'Find out', 'Verify'.\n` +
+    `- No imperative / meta commentary. Use direct topical phrasing (e.g. 'rust async runtime evolution 2024').\n` +
+    `- No first-person language.\n` +
+    `- Keep each query under 110 characters.\n\n` +
     `Return ONLY JSON with fields: plan (markdown ok) and queries (array).`
   );
 }
@@ -75,6 +84,31 @@ export async function queryRewriter(
 
   // Fallback / augmentation logic:
   const question = context.getQuestion();
+  // 1. Defensive fallback plan (should rarely trigger because of schema validation) but ensures UI never empty.
+  if (!obj.plan || obj.plan.trim().length < 25) {
+    obj.plan = [
+      `**Research Strategy**`,
+      `1. Break down the question: clarify scope, key entities, implicit assumptions, timeframe, ambiguous terms.`,
+      `2. Gather foundational context (definitions, baseline state, core mechanisms).`,
+      `3. Collect recent developments (last 12–24 months) and authoritative quantitative or benchmark data where applicable.`,
+      `4. Explore comparative viewpoints (alternatives, trade-offs, risks, limitations).`,
+      `5. Cross-validate critical claims using at least two independent reputable sources before synthesizing answer.`,
+    ].join("\n");
+  }
+
+  // 2. Clean queries for meta prefixes & enforce constraints.
+  const META_PREFIX =
+    /^(need to|need|confirm|check|determine|find out|figure out|verify)\s+/i;
+  if (Array.isArray(obj.queries)) {
+    obj.queries = obj.queries
+      .map((q) => q.trim())
+      .filter(Boolean)
+      .map((q) => q.replace(META_PREFIX, ""))
+      .map((q) => (q.length > 110 ? q.slice(0, 108).trimEnd() : q));
+  } else {
+    obj.queries = [];
+  }
+
   // Step 0 must yield initial exploration queries; if model returned too few, synthesize.
   if (context.getStep() === 0) {
     if (!obj.queries) obj.queries = [];
@@ -88,11 +122,13 @@ export async function queryRewriter(
       // Deduplicate / merge
       const merged = [...obj.queries, ...additions]
         .map((q) => q.trim())
-        .filter(Boolean);
+        .filter(Boolean)
+        .map((q) => q.replace(META_PREFIX, ""));
       const unique: string[] = [];
-      for (const q of merged)
+      for (const q of merged) {
         if (!unique.some((u) => u.toLowerCase() === q.toLowerCase()))
           unique.push(q);
+      }
       obj.queries = unique.slice(0, 4); // cap to 4 to control cost
     }
   }
