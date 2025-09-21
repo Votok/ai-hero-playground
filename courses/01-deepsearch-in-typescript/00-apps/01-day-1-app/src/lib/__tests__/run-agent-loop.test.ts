@@ -1,37 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// We mock searchSerper, bulkCrawlWebsites, and model generateObject/generateText for determinism under new unified search+scrape flow.
-vi.mock("~/serper", () => ({
-  searchSerper: vi.fn(async () => ({
-    organic: [
+// Mock Tavily unified search.
+vi.mock("~/tavily", () => ({
+  tavilySearch: vi.fn(async ({ query }: { query: string }) => ({
+    query,
+    results: [
       {
         title: "Example Source",
-        link: "https://example.com/a",
-        snippet: "Example snippet about topic",
-        position: 1,
-        date: "2025-08-01",
+        url: "https://example.com/a",
+        content: "Example snippet about topic. Full content for page A.",
+        score: 0.9,
       },
       {
         title: "Another Source",
-        link: "https://example.org/b",
-        snippet: "Complementary data snippet",
-        position: 2,
-        date: "2025-08-02",
+        url: "https://example.org/b",
+        content: "Complementary data snippet. Additional details page B.",
+        score: 0.88,
       },
     ],
-  })),
-}));
-
-vi.mock("~/server/crawler/crawl", () => ({
-  bulkCrawlWebsites: vi.fn(async ({ urls }: { urls: string[] }) => ({
-    success: true,
-    results: urls.map((u) => ({
-      url: u,
-      result: {
-        success: true as const,
-        data: `# Title for ${u}\n\nContent for ${u}`,
-      },
-    })),
   })),
 }));
 
@@ -88,6 +74,7 @@ import { runAgentLoop } from "../run-agent-loop";
 
 // Provide env defaults used in code path if necessary (Vitest may not load .env)
 process.env.SEARCH_RESULTS_COUNT = process.env.SEARCH_RESULTS_COUNT || "6";
+process.env.TAVILY_API_KEY = process.env.TAVILY_API_KEY || "test-key";
 
 /**
  * Basic smoke test that loop progresses through search->answer sequence

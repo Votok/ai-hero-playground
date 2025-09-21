@@ -4,80 +4,30 @@ import { SystemContext } from "~/lib/system-context";
 import type { Message } from "ai";
 import { answerQuestion } from "~/lib/answer-question";
 import type { StreamTextResult } from "ai";
-import { searchSerper } from "~/serper";
-import { bulkCrawlWebsites } from "~/server/crawler/crawl";
+// Tavily integration replaces separate search + scrape + summarize passes.
 import { env } from "~/env";
-import { summarizeURL } from "~/lib/summarize-url";
+import { tavilySearch } from "~/tavily";
 import { queryRewriter } from "~/lib/query-rewriter";
 
-// Helper: perform a web search (serper) and immediately crawl each resulting URL.
+// Helper: perform a web search using Tavily which returns already scraped content.
 async function searchAndScrape(query: string, abortSignal?: AbortSignal) {
-  const results = await searchSerper(
-    { q: query, num: env.SEARCH_RESULTS_COUNT },
-    abortSignal,
-  );
-  const organic = results.organic.map((r) => ({
-    title: r.title,
-    link: r.link,
-    snippet: r.snippet,
-    date: r.date || "unknown",
-  }));
-
-  // Crawl all URLs (best-effort). We rely on redis caching inside crawler for reuse.
-  const crawl = await bulkCrawlWebsites({ urls: organic.map((o) => o.link) });
-  const crawlMap = new Map(
-    crawl.results.map((r) => [r.url, r.result] as const),
-  );
-
-  // Build base result objects first (with raw scraped content / errors)
-  const baseResults = organic.map((o) => {
-    const page = crawlMap.get(o.link);
-    if (page && page.success) {
-      return {
-        date: o.date,
-        title: o.title,
-        url: o.link,
-        snippet: o.snippet,
-        scrapedContent: page.data,
-      };
-    }
-    return {
-      date: o.date,
-      title: o.title,
-      url: o.link,
-      snippet: o.snippet,
-      scrapedContent:
-        page && !page.success ? `(error) ${page.error}` : "(no content)",
-    };
+  const results = await tavilySearch({
+    query,
+    options: { num: env.SEARCH_RESULTS_COUNT },
+    signal: abortSignal,
   });
 
-  // Summarize only successful pages with real content (skip errors/no content)
-  const summaries = await Promise.all(
-    baseResults.map(async (r) => {
-      if (!r.scrapedContent || r.scrapedContent.startsWith("(error)"))
-        return null;
-      if (r.scrapedContent === "(no content)") return null;
-      try {
-        const res = await summarizeURL({
-          query,
-          url: r.url,
-          title: r.title,
-          // date might be 'unknown'
-          date: r.date,
-          snippet: r.snippet,
-          content: r.scrapedContent,
-        });
-        return res.summary;
-      } catch (e) {
-        console.error("summarizeURL failed", r.url, e);
-        return null;
-      }
-    }),
-  );
-
-  return baseResults.map((r, i) => ({
-    ...r,
-    summary: summaries[i] || undefined,
+  // Tavily returns `results` each containing title, url, content, score.
+  // It may also return an `answer` field, but we treat that as advisory; we still run our own synthesis.
+  return results.results.map((r) => ({
+    date: "unknown", // Tavily result items currently don't expose dates; could parse from content later
+    title: r.title,
+    url: r.url,
+    snippet:
+      r.content.slice(0, 280).replace(/\s+/g, " ") +
+      (r.content.length > 280 ? "…" : ""),
+    scrapedContent: r.content || "(no content)",
+    // No per-page summary yet; future: we could still pass through summarizer if token pressure requires.
   }));
 }
 
