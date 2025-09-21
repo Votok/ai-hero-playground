@@ -41,25 +41,40 @@ vi.mock("ai", async (orig) => {
   return {
     ...actual,
     generateObject: async ({ schema, prompt }: any) => {
-      // Simple sequencing: first call returns search, second returns answer
+      // Calls sequence: (1) query planner, (2) action decision, (3) planner again? etc.
       const g: any = globalThis as any;
-      if (!g.__callCount) g.__callCount = 0;
-      g.__callCount++;
-      if (g.__callCount === 1) {
+      if (!g.__plannerCount) g.__plannerCount = 0;
+      if (!g.__decisionCount) g.__decisionCount = 0;
+
+      if (prompt.includes("strategic research planner")) {
+        g.__plannerCount++;
         return {
           object: {
-            type: "search",
-            title: "Initial search",
-            reasoning: "Need baseline sources",
-            query: "test query",
+            plan: "Step 1: Gather baseline info.\nStep 2: Validate specifics.",
+            queries: [
+              "baseline context topic",
+              "recent developments topic",
+              "key metrics topic",
+            ],
+          },
+        };
+      }
+      // Decision prompt path
+      g.__decisionCount++;
+      if (g.__decisionCount === 1) {
+        return {
+          object: {
+            type: "continue",
+            title: "Need more sources",
+            reasoning: "First iteration must gather sources.",
           },
         };
       }
       return {
         object: {
           type: "answer",
-          title: "Producing final answer",
-          reasoning: "Sufficient diversity of sources gathered",
+          title: "Proceed to answer",
+          reasoning: "Sufficient coverage from queries.",
         },
       };
     },
@@ -72,7 +87,7 @@ vi.mock("ai", async (orig) => {
 import { runAgentLoop } from "../run-agent-loop";
 
 // Provide env defaults used in code path if necessary (Vitest may not load .env)
-process.env.SEARCH_RESULTS_COUNT = process.env.SEARCH_RESULTS_COUNT || "5";
+process.env.SEARCH_RESULTS_COUNT = process.env.SEARCH_RESULTS_COUNT || "6";
 
 /**
  * Basic smoke test that loop progresses through search->answer sequence

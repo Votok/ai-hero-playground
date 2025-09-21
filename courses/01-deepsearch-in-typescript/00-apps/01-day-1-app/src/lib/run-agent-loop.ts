@@ -8,6 +8,7 @@ import { searchSerper } from "~/serper";
 import { bulkCrawlWebsites } from "~/server/crawler/crawl";
 import { env } from "~/env";
 import { summarizeURL } from "~/lib/summarize-url";
+import { queryRewriter } from "~/lib/query-rewriter";
 
 // Helper: perform a web search (serper) and immediately crawl each resulting URL.
 async function searchAndScrape(query: string, abortSignal?: AbortSignal) {
@@ -133,20 +134,36 @@ export async function runAgentLoop(
     options.writeMessageAnnotation ?? (() => {});
 
   while (ctx.getStep() < maxSteps) {
+    // 1. Always produce (or refresh) a plan + queries for this step.
+    const qp = await queryRewriter(ctx, {
+      langfuseTraceId: options.langfuseTraceId,
+    });
+    writeAnnotation({
+      type: "QUERY_PLAN",
+      plan: qp.plan,
+      queries: qp.queries,
+    });
+
+    // 2. Execute all queries in parallel (search + scrape + summarize) for speed.
+    if (qp.queries && qp.queries.length) {
+      const searchBatches = await Promise.all(
+        qp.queries.map(async (q) => {
+          const combined = await searchAndScrape(q, options.signal);
+          return { query: q, results: combined } as const;
+        }),
+      );
+      for (const batch of searchBatches) {
+        ctx.reportSearch(batch);
+      }
+    }
+
+    // 3. Decide whether to continue or answer now based on accumulated sources.
     const action = await getNextAction(ctx, {
       langfuseTraceId: options.langfuseTraceId,
     });
-
-    // Emit annotation so UI can render step trace
     writeAnnotation({ type: "NEW_ACTION", action });
 
-    if (action.type === "search") {
-      const combined = await searchAndScrape(action.query, options.signal);
-      ctx.reportSearch({
-        query: action.query,
-        results: combined,
-      });
-    } else if (action.type === "answer") {
+    if (action.type === "answer") {
       return answerQuestion(ctx, {
         question,
         langfuseTraceId: options.langfuseTraceId,

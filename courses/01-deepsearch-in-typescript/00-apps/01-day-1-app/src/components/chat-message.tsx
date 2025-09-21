@@ -50,14 +50,15 @@ const ReasoningSteps = ({
 }: {
   annotations: OurMessageAnnotation[];
 }) => {
+  const actionAnnotations = annotations.filter((a) => a.type === "NEW_ACTION");
   const [openStep, setOpenStep] = useState<number | null>(null);
-  if (!annotations || annotations.length === 0) return null;
+  if (actionAnnotations.length === 0) return null;
   return (
     <div className="mb-4 w-full">
       <ul className="space-y-1">
-        {annotations.map((annotation, index) => {
+        {actionAnnotations.map((annotation, index) => {
           const isOpen = openStep === index;
-          const action = annotation.action;
+          const action = annotation.action as any;
           return (
             <li key={index} className="relative">
               <button
@@ -85,15 +86,7 @@ const ReasoningSteps = ({
                     <div className="text-sm italic text-gray-400">
                       <Markdown>{action.reasoning}</Markdown>
                     </div>
-                    {action.type === "search" && action.query && (
-                      <div className="mt-2 flex items-center gap-2 text-sm text-gray-400">
-                        <span className="rounded bg-gray-900 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-blue-300">
-                          query
-                        </span>
-                        <span>{action.query}</span>
-                      </div>
-                    )}
-                    {/* Scrape-specific UI removed: scraping now happens automatically after each search */}
+                    {/* No per-query rendering: queries now shown in QUERY_PLAN block */}
                   </div>
                 )}
               </div>
@@ -184,9 +177,52 @@ export const ChatMessage = ({
         </p>
 
         {isAI && annotations && annotations.length > 0 && (
-          <ReasoningSteps
-            annotations={annotations.filter((a) => a.type === "NEW_ACTION")}
-          />
+          <>
+            {(() => {
+              try {
+                const plans = annotations.filter(
+                  (a) => a.type === "QUERY_PLAN",
+                );
+                if (plans.length === 0) return null;
+                const latest = plans[plans.length - 1] as Extract<
+                  OurMessageAnnotation,
+                  { type: "QUERY_PLAN" }
+                >;
+                const qList = Array.isArray(latest.queries)
+                  ? latest.queries
+                  : [];
+                return (
+                  <div className="bg-gray-750/30 mb-4 rounded border border-gray-700 p-3">
+                    <div className="mb-2 text-xs font-semibold tracking-wide text-blue-300">
+                      Research Plan
+                    </div>
+                    <div className="prose prose-invert mb-3 max-w-none text-sm">
+                      <Markdown>{latest.plan || "(no plan provided)"}</Markdown>
+                    </div>
+                    {qList.length > 0 && (
+                      <div>
+                        <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                          Queries
+                        </div>
+                        <ol className="list-decimal space-y-1 pl-4 text-sm text-gray-300">
+                          {qList.map((q, i) => (
+                            <li key={i} className="leading-snug">
+                              <code className="rounded bg-gray-900 px-1 py-0.5 text-[11px] text-blue-200">
+                                {q}
+                              </code>
+                            </li>
+                          ))}
+                        </ol>
+                      </div>
+                    )}
+                  </div>
+                );
+              } catch (e) {
+                return null;
+              }
+            })()}
+            <ReasoningSteps annotations={annotations} />
+          </>
         )}
 
         {Array.isArray(parts) && parts.length > 0 ? (

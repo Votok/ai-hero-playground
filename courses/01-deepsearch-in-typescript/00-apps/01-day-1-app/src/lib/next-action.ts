@@ -16,15 +16,14 @@ export interface BaseActionMeta {
   reasoning: string;
 }
 
-export interface SearchAction extends BaseActionMeta {
-  type: "search";
-  query: string;
+export interface ContinueAction extends BaseActionMeta {
+  type: "continue"; // indicates we should gather more info (search phase handled elsewhere)
 }
 
 export interface AnswerAction extends BaseActionMeta {
-  type: "answer";
+  type: "answer"; // produce final answer now
 }
-export type Action = SearchAction | AnswerAction;
+export type Action = ContinueAction | AnswerAction;
 
 /**
  * Zod schema used for structured output parsing.
@@ -36,31 +35,22 @@ export type Action = SearchAction | AnswerAction;
 export const actionSchema = z
   .object({
     type: z
-      .enum(["search", "answer"])
+      .enum(["continue", "answer"])
       .describe(
-        `The type of action to take.\n- 'search': Perform a focused web search to gather missing information (the system will automatically retrieve & scrape top results).\n- 'answer': Provide the final answer to the user (only when further searching is unlikely to materially improve accuracy).`,
+        `Control decision only.\n- 'continue': Additional information gathering (query planning & searches) should proceed.\n- 'answer': We have sufficient information to compose the final answer.`,
       ),
     title: z
       .string()
       .describe(
-        "Concise user-visible title for this step (<= 8 words). Examples: 'Searching HMRC industrial action', 'Scraping framework benchmarks', 'Producing final answer'.",
+        "Concise user-visible title for this control decision (<= 8 words). Examples: 'Need more sources', 'Proceed to answer'.",
       ),
     reasoning: z
       .string()
       .describe(
-        "Short reasoning (1-3 sentences) explaining why this action is the optimal next step. Reference knowledge gaps or decision criteria. Use markdown lightly if helpful.",
+        "Short reasoning (1-3 sentences) explaining why to continue researching or answer now. Reference coverage, diversity, recency, and remaining gaps.",
       ),
-    query: z
-      .string()
-      .describe(
-        "The query to search for. Required if type is 'search'. Craft it to close specific knowledge gaps (e.g. add qualifiers, alternative tech, dates).",
-      )
-      .optional(),
-    // Legacy field removed: urls (scraping now automatic after each search)
   })
-  .describe(
-    "Next action decision object including title + reasoning for UI transparency",
-  );
+  .describe("Next control action decision object with title + reasoning");
 
 /**
  * Build a decision-oriented system prompt leveraging existing deep search policy.
@@ -74,21 +64,22 @@ function buildDecisionPrompt(context: SystemContext): string {
   const locationBlock = context.getLocationBlock();
 
   return (
-    `You are a research loop controller deciding the SINGLE best next action. You can only:\n\n` +
-    `1. search  - When new or refined information is needed. Formulate a HIGH-VALUE, specific, disambiguating query targeting gaps (dates, constraints, comparisons, alternative tech/frameworks, criticisms, benchmarks). The system will automatically retrieve & scrape the top results (limited count) for you.\n` +
-    `2. answer  - Only when accumulated scraped material is sufficiently diverse, authoritative, and comprehensive that further searching is unlikely to materially improve accuracy.\n\n` +
-    `Guidelines:\n` +
-    `- First step MUST be 'search'.\n` +
-    `- Perform follow-up 'search' if current material lacks domain diversity (too many from same host), temporal coverage (missing recent updates), or facet coverage (benchmarks, risks, alternatives, criticisms).\n` +
-    `- Do NOT choose 'answer' if there are glaring gaps, narrow sourcing, or unresolved explicit sub-questions from the user.\n` +
-    `- Keep queries tightly scoped to close knowledge gaps—not broad generic queries.\n\n` +
+    `You are a research loop controller deciding whether to continue gathering information or produce the final answer.\n\n` +
+    `You can only choose:\n` +
+    `1. continue - More searches should be executed (a separate planner will create queries).\n` +
+    `2. answer   - Sufficient coverage & diversity: proceed to synthesize final answer.\n\n` +
+    `Decision Guidelines:\n` +
+    `- Early steps almost always require 'continue' unless the question is trivially answerable without external sources.\n` +
+    `- Choose 'continue' if sources lack diversity (same domains), recency (missing latest year where relevant), or facet coverage (comparisons, risks, alternatives, quantitative data).\n` +
+    `- Choose 'answer' only when additional searching is unlikely to materially change or validate the answer.\n` +
+    `- Consider user intent, required specificity, and unresolved sub-questions.\n` +
+    `- Never hallucinate: if unsure, pick 'continue'.\n\n` +
     `Conversation History (most recent first ~limited):\n${convoHistory || "(none)"}\n\n` +
     (locationBlock ? `Request Location (approx):\n${locationBlock}\n\n` : "") +
     `User Question (latest):\n"${question}"\n\n` +
     `Current Step: ${context.getStep()}\n` +
-    `Search & Scrape History (combined):\n${unifiedHistory || "(none)"}\n\n` +
-    `FIRST STEP RULE: If step is 0 you MUST perform a 'search' using a high-quality query derived directly from the user question (do not answer yet).\n\n` +
-    `Return ONLY valid JSON with fields: type, title, reasoning, and conditional field (query for search). No extra commentary.`
+    `Collected Source History:\n${unifiedHistory || "(none)"}\n\n` +
+    `Return ONLY valid JSON with fields: type ('continue'|'answer'), title, reasoning.`
   );
 }
 
@@ -119,13 +110,17 @@ export async function getNextAction(
   });
 
   const action = result.object as Action; // validated by schema
-
-  // Basic post-parse guardrails (defensive programming) enforcing conditional fields.
-  if (action.type === "search" && !action.query) {
-    throw new Error("Model returned search action without query");
-  }
   if (!action.title || !action.reasoning) {
     throw new Error("Model failed to supply title or reasoning");
+  }
+  // Enforce deterministic early exploration: step 0 must be continue.
+  if (context.getStep() === 0 && action.type === "answer") {
+    return {
+      type: "continue",
+      title: "Need initial sources",
+      reasoning:
+        "First step must gather external information before answering.",
+    };
   }
   return action;
 }

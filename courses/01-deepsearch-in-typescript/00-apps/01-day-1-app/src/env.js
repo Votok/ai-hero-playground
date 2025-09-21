@@ -19,7 +19,7 @@ export const env = createEnv({
     SERPER_API_KEY: z.string(),
     // How many search results to request from the search provider for each query.
     // Coerced to number so callers can use it directly.
-    SEARCH_RESULTS_COUNT: z.coerce.number().default(3),
+    SEARCH_RESULTS_COUNT: z.coerce.number().default(6),
     // Minimum number of pages the model must scrape per query (diversity + depth).
     SCRAPE_MIN_PAGES: z.coerce.number().int().min(1).default(4),
     // Maximum number of pages the model should scrape unless user explicitly requests broader survey.
