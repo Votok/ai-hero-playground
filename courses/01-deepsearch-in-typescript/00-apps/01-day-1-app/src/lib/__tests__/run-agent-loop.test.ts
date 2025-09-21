@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// We will mock searchSerper and bulkCrawlWebsites + model generateText to make the loop deterministic.
+// We mock searchSerper, bulkCrawlWebsites, and model generateObject/generateText for determinism under new unified search+scrape flow.
 vi.mock("~/serper", () => ({
   searchSerper: vi.fn(async () => ({
     organic: [
@@ -41,7 +41,7 @@ vi.mock("ai", async (orig) => {
   return {
     ...actual,
     generateObject: async ({ schema, prompt }: any) => {
-      // Simple sequencing: first call returns search, second returns scrape, third returns answer
+      // Simple sequencing: first call returns search, second returns answer
       const g: any = globalThis as any;
       if (!g.__callCount) g.__callCount = 0;
       g.__callCount++;
@@ -52,15 +52,6 @@ vi.mock("ai", async (orig) => {
             title: "Initial search",
             reasoning: "Need baseline sources",
             query: "test query",
-          },
-        };
-      } else if (g.__callCount === 2) {
-        return {
-          object: {
-            type: "scrape",
-            title: "Scraping pages",
-            reasoning: "Collect full content for synthesis",
-            urls: ["https://example.com/a", "https://example.org/b"],
           },
         };
       }
@@ -84,8 +75,8 @@ import { runAgentLoop } from "../run-agent-loop";
 process.env.SEARCH_RESULTS_COUNT = process.env.SEARCH_RESULTS_COUNT || "5";
 
 /**
- * Basic smoke test that loop progresses through search->scrape->answer sequence
- * with mocked tool + model outputs.
+ * Basic smoke test that loop progresses through search->answer sequence
+ * with unified automatic scraping inside the search action.
  */
 describe("runAgentLoop", () => {
   beforeEach(() => {

@@ -8,27 +8,45 @@ import { searchSerper } from "~/serper";
 import { bulkCrawlWebsites } from "~/server/crawler/crawl";
 import { env } from "~/env";
 
-/**
- * Copy of the search tool logic from deep-search.ts turned into a plain function.
- */
-async function searchWeb(query: string, abortSignal?: AbortSignal) {
+// Helper: perform a web search (serper) and immediately crawl each resulting URL.
+async function searchAndScrape(query: string, abortSignal?: AbortSignal) {
   const results = await searchSerper(
     { q: query, num: env.SEARCH_RESULTS_COUNT },
     abortSignal,
   );
-  return results.organic.map((r) => ({
+  const organic = results.organic.map((r) => ({
     title: r.title,
     link: r.link,
     snippet: r.snippet,
-    date: r.date || null,
+    date: r.date || "unknown",
   }));
-}
 
-/**
- * Copy of the scrapePages tool logic from deep-search.ts turned into a plain function.
- */
-async function scrapePages(urls: string[]) {
-  return bulkCrawlWebsites({ urls });
+  // Crawl all URLs (best-effort). We rely on redis caching inside crawler for reuse.
+  const crawl = await bulkCrawlWebsites({ urls: organic.map((o) => o.link) });
+  const crawlMap = new Map(
+    crawl.results.map((r) => [r.url, r.result] as const),
+  );
+
+  return organic.map((o) => {
+    const page = crawlMap.get(o.link);
+    if (page && page.success) {
+      return {
+        date: o.date,
+        title: o.title,
+        url: o.link,
+        snippet: o.snippet,
+        scrapedContent: page.data,
+      };
+    }
+    return {
+      date: o.date,
+      title: o.title,
+      url: o.link,
+      snippet: o.snippet,
+      scrapedContent:
+        page && !page.success ? `(error) ${page.error}` : "(no content)",
+    };
+  });
 }
 
 export interface RunAgentLoopOptions {
@@ -92,30 +110,11 @@ export async function runAgentLoop(
     writeAnnotation({ type: "NEW_ACTION", action });
 
     if (action.type === "search") {
-      const results = await searchWeb(action.query, options.signal);
-      // Map into SystemContext structure
-      ctx.reportQueries([
-        {
-          query: action.query,
-          results: results.map((r) => ({
-            date: r.date || "unknown",
-            title: r.title,
-            url: r.link,
-            snippet: r.snippet,
-          })),
-        },
-      ]);
-    } else if (action.type === "scrape") {
-      const crawl = await scrapePages(action.urls);
-      // Whether success or partial failure, capture each individual page outcome.
-      ctx.reportScrapes(
-        crawl.results.map((r) => {
-          if (r.result.success) {
-            return { url: r.url, result: r.result.data };
-          }
-          return { url: r.url, result: `(error) ${r.result.error}` };
-        }),
-      );
+      const combined = await searchAndScrape(action.query, options.signal);
+      ctx.reportSearch({
+        query: action.query,
+        results: combined,
+      });
     } else if (action.type === "answer") {
       return answerQuestion(ctx, {
         question,

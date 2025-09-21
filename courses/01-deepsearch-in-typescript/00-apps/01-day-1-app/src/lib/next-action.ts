@@ -21,16 +21,10 @@ export interface SearchAction extends BaseActionMeta {
   query: string;
 }
 
-export interface ScrapeAction extends BaseActionMeta {
-  type: "scrape";
-  urls: string[];
-}
-
 export interface AnswerAction extends BaseActionMeta {
   type: "answer";
 }
-
-export type Action = SearchAction | ScrapeAction | AnswerAction;
+export type Action = SearchAction | AnswerAction;
 
 /**
  * Zod schema used for structured output parsing.
@@ -42,9 +36,9 @@ export type Action = SearchAction | ScrapeAction | AnswerAction;
 export const actionSchema = z
   .object({
     type: z
-      .enum(["search", "scrape", "answer"])
+      .enum(["search", "answer"])
       .describe(
-        `The type of action to take.\n- 'search': Perform a focused web search to gather missing information.\n- 'scrape': Fetch full page content for deeper synthesis (use after identifying promising URLs).\n- 'answer': Provide the final answer to the user (only when confident no further search/scrape materially improves quality).`,
+        `The type of action to take.\n- 'search': Perform a focused web search to gather missing information (the system will automatically retrieve & scrape top results).\n- 'answer': Provide the final answer to the user (only when further searching is unlikely to materially improve accuracy).`,
       ),
     title: z
       .string()
@@ -62,12 +56,7 @@ export const actionSchema = z
         "The query to search for. Required if type is 'search'. Craft it to close specific knowledge gaps (e.g. add qualifiers, alternative tech, dates).",
       )
       .optional(),
-    urls: z
-      .array(z.string())
-      .describe(
-        "The URLs to scrape. Required if type is 'scrape'. Should be diverse, authoritative, and non-duplicative (avoid >2 from same domain).",
-      )
-      .optional(),
+    // Legacy field removed: urls (scraping now automatic after each search)
   })
   .describe(
     "Next action decision object including title + reasoning for UI transparency",
@@ -79,38 +68,34 @@ export const actionSchema = z
  * function's job is only to decide the NEXT ACTION, not to write the final answer.
  */
 function buildDecisionPrompt(context: SystemContext): string {
-  const queryHistory = context.getQueryHistory();
-  const scrapeHistory = context.getScrapeHistory();
+  const unifiedHistory = context.getSearchHistory();
   const question = context.getQuestion();
   const convoHistory = context.getConversationHistory();
   const locationBlock = context.getLocationBlock();
 
   return (
-    `You are a research loop controller deciding the SINGLE best next action. You can: \n\n` +
-    `1. search  - When new or refined information is needed. Formulate a HIGH-VALUE, Specific, disambiguating query targeting gaps (dates, constraints, comparisons, alternative frameworks, criticisms, benchmarks).\n` +
-    `2. scrape  - When you already have candidate URLs (from previous search results) whose FULL content is needed for authoritative synthesis. Choose only high quality, diverse domains (avoid thin/duplicate/spam). If earlier searches exist but you have NOT yet scraped a diverse set, prefer scrape.\n` +
-    `3. answer  - Only when you have scraped sufficient diverse, authoritative material to confidently answer with citations and further search/scrape is unlikely to materially improve accuracy.\n\n` +
+    `You are a research loop controller deciding the SINGLE best next action. You can only:\n\n` +
+    `1. search  - When new or refined information is needed. Formulate a HIGH-VALUE, specific, disambiguating query targeting gaps (dates, constraints, comparisons, alternative tech/frameworks, criticisms, benchmarks). The system will automatically retrieve & scrape the top results (limited count) for you.\n` +
+    `2. answer  - Only when accumulated scraped material is sufficiently diverse, authoritative, and comprehensive that further searching is unlikely to materially improve accuracy.\n\n` +
     `Guidelines:\n` +
-    `- Prefer 'search' early (first step almost always search).\n` +
-    `- After a search, you almost always need 'scrape' of multiple diverse pages before answering.\n` +
-    `- Use follow-up 'search' if existing pages lack diversity (same domain cluster) or miss critical facets (e.g., performance benchmarks, recent updates, critical comparisons, security concerns).\n` +
-    `- Do NOT choose 'answer' if there are zero scrapes, or only 1-2 low-diversity scrapes, or unresolved explicit user sub-questions.\n` +
-    `- Keep URLs list concise (3-6 typical) for 'scrape' depending on configured limits; avoid already-scraped URLs unless re-scrape is justified (usually not).\n\n` +
+    `- First step MUST be 'search'.\n` +
+    `- Perform follow-up 'search' if current material lacks domain diversity (too many from same host), temporal coverage (missing recent updates), or facet coverage (benchmarks, risks, alternatives, criticisms).\n` +
+    `- Do NOT choose 'answer' if there are glaring gaps, narrow sourcing, or unresolved explicit sub-questions from the user.\n` +
+    `- Keep queries tightly scoped to close knowledge gaps—not broad generic queries.\n\n` +
     `Conversation History (most recent first ~limited):\n${convoHistory || "(none)"}\n\n` +
     (locationBlock ? `Request Location (approx):\n${locationBlock}\n\n` : "") +
     `User Question (latest):\n"${question}"\n\n` +
     `Current Step: ${context.getStep()}\n` +
-    `Previous Queries (if any):\n${queryHistory || "(none)"}\n\n` +
-    `Previous Scrapes (if any):\n${scrapeHistory || "(none)"}\n\n` +
-    `FIRST STEP RULE: If step is 0 you MUST perform a 'search' using a high-quality query derived directly from the user question (do not answer yet and do not scrape before searching).\n\n` +
-    `Decide the next action now. Return ONLY the structured JSON object with fields: type, title, reasoning, and conditional fields (query or urls). Do not include any extra commentary outside JSON.`
+    `Search & Scrape History (combined):\n${unifiedHistory || "(none)"}\n\n` +
+    `FIRST STEP RULE: If step is 0 you MUST perform a 'search' using a high-quality query derived directly from the user question (do not answer yet).\n\n` +
+    `Return ONLY valid JSON with fields: type, title, reasoning, and conditional field (query for search). No extra commentary.`
   );
 }
 
 /**
  * Decide the next control action of the deep search loop.
- * Input: current mutable `SystemContext` (read-only usage here) holding prior queries & scrapes.
- * Output: Action object (search | scrape | answer).
+ * Input: current mutable `SystemContext` (read-only usage here) holding prior unified search history.
+ * Output: Action object (search | answer).
  * Error Modes: Throws if model violates required conditional fields.
  */
 export async function getNextAction(
@@ -138,9 +123,6 @@ export async function getNextAction(
   // Basic post-parse guardrails (defensive programming) enforcing conditional fields.
   if (action.type === "search" && !action.query) {
     throw new Error("Model returned search action without query");
-  }
-  if (action.type === "scrape" && (!action.urls || action.urls.length === 0)) {
-    throw new Error("Model returned scrape action without urls");
   }
   if (!action.title || !action.reasoning) {
     throw new Error("Model failed to supply title or reasoning");

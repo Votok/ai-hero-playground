@@ -1,28 +1,33 @@
 // SystemContext: tracks iterative deep search loop state.
-// This will be passed into `getNextAction` (to be implemented later).
+// Refactored to maintain a single unified search history where each entry
+// contains both the search result snippet metadata AND the scraped page content.
 
-export type QueryResultSearchResult = {
-  date: string; // e.g. ISO timestamp or human readable date
+export type SearchResult = {
+  date: string; // ISO or human readable date
   title: string;
   url: string;
-  snippet: string; // short extract/summary from search result
+  snippet: string; // snippet from search provider
+  scrapedContent: string; // full (processed) page content (markdown) or error marker
 };
 
-export type QueryResult = {
+export type SearchHistoryEntry = {
   query: string;
-  results: QueryResultSearchResult[];
-};
-
-export type ScrapeResult = {
-  url: string;
-  result: string; // raw scraped content (may be markdown / HTML → converted)
+  results: SearchResult[];
 };
 
 /**
- * Convert an individual search result into a concise, LLM-friendly markdown block.
+ * Convert an individual unified search result (with scraped content) into an
+ * LLM-friendly markdown block.
  */
-const toQueryResult = (r: QueryResultSearchResult): string =>
-  [`### ${r.date} - ${r.title}`, r.url, r.snippet].join("\n\n");
+const toUnifiedResult = (r: SearchResult): string =>
+  [
+    `### ${r.date} - ${r.title}`,
+    r.url,
+    r.snippet,
+    `<scrape_result>`,
+    r.scrapedContent,
+    `</scrape_result>`,
+  ].join("\n\n");
 
 /**
  * Container for maintaining loop state across search + scrape iterations.
@@ -34,11 +39,8 @@ export class SystemContext {
   /** The current step in the loop */
   private step = 0;
 
-  /** The history of all queries searched */
-  private queryHistory: QueryResult[] = [];
-
-  /** The history of all URLs scraped */
-  private scrapeHistory: ScrapeResult[] = [];
+  /** Unified history of searches with their associated scraped results */
+  private searchHistory: SearchHistoryEntry[] = [];
 
   /** Prior conversation messages (excluding the latest user question already in question) */
   private priorMessages: { role: string; content: string }[] = [];
@@ -94,40 +96,20 @@ export class SystemContext {
     return this.step >= 10; // placeholder stopping condition
   }
 
-  /** Report the results of executed queries. */
-  reportQueries(queries: QueryResult[]): void {
-    if (queries.length === 0) return;
-    this.queryHistory.push(...queries);
+  /** Report a completed search (including scraped page contents). */
+  reportSearch(entry: SearchHistoryEntry): void {
+    if (!entry || !entry.results?.length) return;
+    this.searchHistory.push(entry);
   }
 
-  /** Report the results of completed scrapes. */
-  reportScrapes(scrapes: ScrapeResult[]): void {
-    if (scrapes.length === 0) return;
-    this.scrapeHistory.push(...scrapes);
-  }
-
-  /** LLM-formatted history of all queries + their results. */
-  getQueryHistory(): string {
-    if (this.queryHistory.length === 0) return "";
-    return this.queryHistory
-      .map((q) =>
-        [`## Query: "${q.query}"`, ...q.results.map(toQueryResult)].join(
-          "\n\n",
-        ),
-      )
-      .join("\n\n");
-  }
-
-  /** LLM-formatted history of all scrapes. */
-  getScrapeHistory(): string {
-    if (this.scrapeHistory.length === 0) return "";
-    return this.scrapeHistory
-      .map((s) =>
+  /** LLM-formatted unified history of all searches + snippets + scraped contents. */
+  getSearchHistory(): string {
+    if (this.searchHistory.length === 0) return "";
+    return this.searchHistory
+      .map((search) =>
         [
-          `## Scrape: "${s.url}"`,
-          `<scrape_result>`,
-          s.result,
-          `</scrape_result>`,
+          `## Query: "${search.query}"`,
+          ...search.results.map(toUnifiedResult),
         ].join("\n\n"),
       )
       .join("\n\n");

@@ -50,8 +50,7 @@ export function answerQuestion(
   opts: AnswerQuestionOptions,
 ): StreamTextResult<{}, string> {
   const system = buildAnswerSystemPrompt(opts);
-  const queryHistory = context.getQueryHistory();
-  const scrapeHistory = context.getScrapeHistory();
+  const searchHistory = context.getSearchHistory();
   const convoHistory = context.getConversationHistory();
   const locationBlock = context.getLocationBlock();
 
@@ -61,8 +60,8 @@ export function answerQuestion(
       ? "REQUEST LOCATION CONTEXT (approx):\n" + locationBlock
       : null,
     "QUESTION (latest user message):\n" + opts.question,
-    "SEARCH HISTORY (queries + snippets):\n" + (queryHistory || "(none)"),
-    "SCRAPED PAGE CONTENT:\n" + (scrapeHistory || "(none)"),
+    "SEARCH HISTORY (queries + snippets + scraped content):\n" +
+      (searchHistory || "(none)"),
     "Produce the final answer now following the system rules.",
   ]
     .filter(Boolean)

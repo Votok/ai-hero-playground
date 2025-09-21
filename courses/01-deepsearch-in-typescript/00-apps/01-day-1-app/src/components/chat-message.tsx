@@ -93,24 +93,7 @@ const ReasoningSteps = ({
                         <span>{action.query}</span>
                       </div>
                     )}
-                    {action.type === "scrape" && action.urls && (
-                      <div className="mt-2 flex items-center gap-2 text-sm text-gray-400">
-                        <span className="rounded bg-gray-900 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-purple-300">
-                          urls
-                        </span>
-                        <span>
-                          {action.urls
-                            .map((u) => {
-                              try {
-                                return new URL(u).hostname;
-                              } catch {
-                                return u;
-                              }
-                            })
-                            .join(", ")}
-                        </span>
-                      </div>
-                    )}
+                    {/* Scrape-specific UI removed: scraping now happens automatically after each search */}
                   </div>
                 )}
               </div>
