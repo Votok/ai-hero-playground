@@ -12,12 +12,27 @@ import type { OurMessageAnnotation } from "~/lib/annotations";
 import { Langfuse } from "langfuse";
 import { env } from "~/env";
 import { checkRateLimit, recordRateLimit } from "~/server/redis/rate-limit";
+import { geolocation } from "@vercel/functions";
 
 export const maxDuration = 60;
 
 const DAILY_REQUEST_LIMIT = 1;
 
 export async function POST(request: Request) {
+  // DEVELOPMENT GEO MOCK: before calling geolocation
+  let geoRequest: Request = request;
+  if (process.env.NODE_ENV === "development") {
+    const headers = new Headers(request.headers);
+    if (!headers.get("x-vercel-ip-country"))
+      headers.set("x-vercel-ip-country", "UK");
+    if (!headers.get("x-vercel-ip-country-region"))
+      headers.set("x-vercel-ip-country-region", "GB");
+    if (!headers.get("x-vercel-ip-city"))
+      headers.set("x-vercel-ip-city", "Oxford");
+    geoRequest = new Request(request.url, { method: request.method, headers });
+  }
+  const { longitude, latitude, city, country } = geolocation(geoRequest as any);
+  const requestLocation = { longitude, latitude, city, country };
   // Global LLM usage rate limit (test configuration: 1 request / 5 seconds)
   const globalRateLimitConfig = {
     maxRequests: 1,
@@ -149,6 +164,7 @@ export async function POST(request: Request) {
       const annotations: OurMessageAnnotation[] = [];
       const result = await streamFromDeepSearch({
         messages,
+        location: requestLocation,
         onFinish: async ({ response }) => {
           try {
             const responseMessages = response.messages.filter(

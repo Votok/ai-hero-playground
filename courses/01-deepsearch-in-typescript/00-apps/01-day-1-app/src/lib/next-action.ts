@@ -83,6 +83,7 @@ function buildDecisionPrompt(context: SystemContext): string {
   const scrapeHistory = context.getScrapeHistory();
   const question = context.getQuestion();
   const convoHistory = context.getConversationHistory();
+  const locationBlock = context.getLocationBlock();
 
   return (
     `You are a research loop controller deciding the SINGLE best next action. You can: \n\n` +
@@ -96,6 +97,7 @@ function buildDecisionPrompt(context: SystemContext): string {
     `- Do NOT choose 'answer' if there are zero scrapes, or only 1-2 low-diversity scrapes, or unresolved explicit user sub-questions.\n` +
     `- Keep URLs list concise (3-6 typical) for 'scrape' depending on configured limits; avoid already-scraped URLs unless re-scrape is justified (usually not).\n\n` +
     `Conversation History (most recent first ~limited):\n${convoHistory || "(none)"}\n\n` +
+    (locationBlock ? `Request Location (approx):\n${locationBlock}\n\n` : "") +
     `User Question (latest):\n"${question}"\n\n` +
     `Current Step: ${context.getStep()}\n` +
     `Previous Queries (if any):\n${queryHistory || "(none)"}\n\n` +

@@ -53,14 +53,20 @@ export function answerQuestion(
   const queryHistory = context.getQueryHistory();
   const scrapeHistory = context.getScrapeHistory();
   const convoHistory = context.getConversationHistory();
+  const locationBlock = context.getLocationBlock();
 
   const userPrompt = [
     "CONVERSATION HISTORY (earlier turns):\n" + (convoHistory || "(none)"),
+    locationBlock
+      ? "REQUEST LOCATION CONTEXT (approx):\n" + locationBlock
+      : null,
     "QUESTION (latest user message):\n" + opts.question,
     "SEARCH HISTORY (queries + snippets):\n" + (queryHistory || "(none)"),
     "SCRAPED PAGE CONTENT:\n" + (scrapeHistory || "(none)"),
     "Produce the final answer now following the system rules.",
-  ].join("\n\n");
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 
   const stream = streamText({
     model,

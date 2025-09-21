@@ -44,6 +44,13 @@ export interface RunAgentLoopOptions {
   messages?: Message[];
   /** onFinish callback for final answer streaming */
   onFinish?: (result: StreamTextResult<{}, string>) => void | Promise<void>;
+  /** Optional location hints */
+  location?: {
+    latitude?: string;
+    longitude?: string;
+    city?: string;
+    country?: string;
+  };
 }
 
 /**
@@ -68,7 +75,10 @@ export async function runAgentLoop(
       .map((m) => ({ role: m.role, content: m.content.toString() }));
   }
 
-  const ctx = new SystemContext(question, { priorMessages: prior });
+  const ctx = new SystemContext(question, {
+    priorMessages: prior,
+    location: options.location,
+  });
   const maxSteps = options.maxSteps ?? 10;
   const writeAnnotation: WriteMessageAnnotationFn =
     options.writeMessageAnnotation ?? (() => {});

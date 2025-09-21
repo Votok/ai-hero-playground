@@ -43,15 +43,34 @@ export class SystemContext {
   /** Prior conversation messages (excluding the latest user question already in question) */
   private priorMessages: { role: string; content: string }[] = [];
 
+  /** Optional approximate request location */
+  private location?: {
+    latitude?: string;
+    longitude?: string;
+    city?: string;
+    country?: string;
+  };
+
   constructor(
     question: string,
-    opts?: { priorMessages?: { role: string; content: string }[] },
+    opts?: {
+      priorMessages?: { role: string; content: string }[];
+      location?: {
+        latitude?: string;
+        longitude?: string;
+        city?: string;
+        country?: string;
+      };
+    },
   ) {
     this.question = question;
     if (opts?.priorMessages?.length) {
       // Shallow copy & trim excessively long histories (keep last 12 to stay concise)
       const MAX_HISTORY = 12;
       this.priorMessages = opts.priorMessages.slice(-MAX_HISTORY);
+    }
+    if (opts?.location) {
+      this.location = { ...opts.location };
     }
   }
 
@@ -120,5 +139,20 @@ export class SystemContext {
     return this.priorMessages
       .map((m, i) => `### ${i + 1}. ${m.role.toUpperCase()}\n${m.content}`)
       .join("\n\n");
+  }
+
+  /** Formatted location block for prompts (may be empty). */
+  getLocationBlock(): string {
+    if (!this.location) return "";
+    const { city, country, latitude, longitude } = this.location;
+    if (!city && !country && !latitude && !longitude) return "";
+    return [
+      `USER LOCATION (approx from IP geolocation)`,
+      `city: ${city || "unknown"}`,
+      `country: ${country || "unknown"}`,
+      `latitude: ${latitude || "unknown"}`,
+      `longitude: ${longitude || "unknown"}`,
+      `Use this when interpreting relative phrases like "near me", "nearby", "local", unless user specifies a different location explicitly. If user gives another place, prefer the explicit user-provided location.`,
+    ].join("\n");
   }
 }

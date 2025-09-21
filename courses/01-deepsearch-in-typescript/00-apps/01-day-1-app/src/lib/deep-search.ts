@@ -5,18 +5,31 @@ import {
 } from "ai";
 import { env } from "~/env";
 import { runAgentLoop } from "~/lib/run-agent-loop";
+import { model } from "~/lib/model";
+import { streamText, type StreamTextResult as ST } from "ai";
 
 /**
  * Shared system prompt used by deep search chat + evals.
  * Keep this in sync with the API route logic.
  */
-function buildSystemPrompt(now: Date = new Date()): string {
+function buildSystemPrompt(
+  now: Date = new Date(),
+  location?: {
+    city?: string;
+    country?: string;
+    latitude?: string;
+    longitude?: string;
+  },
+): string {
   const isoNow = now.toISOString();
   const humanNow =
     now.toLocaleString("en-US", { timeZone: "UTC", hour12: false }) + " UTC";
   const minPages = env.SCRAPE_MIN_PAGES;
   const maxPages = env.SCRAPE_MAX_PAGES;
-  return `You are a research assistant. The current date/time is ${humanNow} (ISO: ${isoNow}). When the user asks for anything time-sensitive ("today", "current", "latest", events, prices, weather, sports, news, releases, rankings) you MUST:
+  const locationLine = location
+    ? `Approximate user location => city: ${location.city || "unknown"}, country: ${location.country || "unknown"}, lat: ${location.latitude || "unknown"}, lon: ${location.longitude || "unknown"}. Use this to interpret relative geographic phrases ("near me", "local", etc.) unless the user specifies a different explicit location.\n`
+    : "";
+  return `You are a research assistant. The current date/time is ${humanNow} (ISO: ${isoNow}). ${locationLine}When the user asks for anything time-sensitive ("today", "current", "latest", events, prices, weather, sports, news, releases, rankings) you MUST:
 - Explicitly reference that the knowledge cutoff of the underlying model may be earlier, but you have real-time search tools.
 - Use the provided current date to interpret relative temporal expressions (e.g. "last week", "next month").
 - Prefer the most recently dated high-quality sources (verify publication or last updated dates) and cite their dates inline when relevant.
@@ -64,7 +77,14 @@ export interface StreamFromDeepSearchOptions {
  * Keeps tools & system prompt in one place.
  */
 export async function streamFromDeepSearch(
-  opts: StreamFromDeepSearchOptions,
+  opts: StreamFromDeepSearchOptions & {
+    location?: {
+      latitude?: string;
+      longitude?: string;
+      city?: string;
+      country?: string;
+    };
+  },
 ): Promise<StreamTextResult<{}, string>> {
   // For now we only care about the latest user message to drive the loop.
   const lastUserMessage = [...opts.messages]
@@ -72,11 +92,15 @@ export async function streamFromDeepSearch(
     .find((m) => m.role === "user");
   const question = lastUserMessage?.content?.toString() ?? "";
 
+  const systemPrompt = buildSystemPrompt(new Date(), opts.location);
+
+  // (Future) systemPrompt could be injected into first model calls; currently runAgentLoop builds its own internal prompts.
   const streamResult = await runAgentLoop(question, {
     maxSteps: 10,
     writeMessageAnnotation: opts.writeMessageAnnotation,
     langfuseTraceId: opts.langfuseTraceId,
     messages: opts.messages,
+    location: opts.location,
     onFinish: async (result) => {
       if (opts.onFinish) {
         await opts.onFinish({
